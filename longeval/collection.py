@@ -2,7 +2,6 @@
 
 from pathlib import Path
 from pyspark.sql import functions as F
-from unidecode import unidecode
 
 
 class Collection:
@@ -29,35 +28,21 @@ class Collection:
     @property
     def documents(self):
         """Read the document collection."""
-        # unfortunately this doesn't work well because we blow up memory
-        # df = self.spark.read.json(f"{self.path}/Documents/Json/*")
-
-        # and unfortunately this does work well because special characters cause issues
-        df = (
-            self.spark.read.format("com.databricks.spark.xml")
-            .option("rowTag", "DOC")
-            # .option("mode", "FAILFAST")
-            .option("inferSchema", "true")
-            .load(f"{self.path}/Documents/Trec/*1.txt")
-            # special characters cause issues, so we can manually extract other data
-            .withColumn(
-                "_corrupt_record",
-                F.when(
-                    F.expr("_corrupt_record is null"),
-                    F.lit(None),
-                ).otherwise(F.udf(lambda s: unidecode(s or ""))("_corrupt_record")),
-            )
-            .withColumn("DOCID", self._extract_attr_udf("DOCID"))
-            .withColumn("DOCNO", self._extract_attr_udf("DOCNO"))
-            .withColumn("TEXT", self._extract_attr_udf("TEXT", use_udf=True))
-            # .drop("_corrupt_record")
-        )
+        df = self.spark.read.json(
+            f"{self.path}/Documents/Json/*", multiLine=True
+        ).withColumnRenamed("id", "docid")
         return df
 
     @property
     def qrels(self):
-        return self.spark.read.csv(f"{self.path}/Qrels/*", sep=" ")
+        return self.spark.read.csv(
+            f"{self.path}/Qrels/*",
+            sep=" ",
+            schema="qid STRING, rank INT, docid STRING, rel INT",
+        )
 
     @property
     def queries(self):
-        return self.spark.read.csv(f"{self.path}/Queries/*.tsv", sep="\t")
+        return self.spark.read.csv(
+            f"{self.path}/Queries/*.tsv", sep="\t", schema="qid STRING, query STRING"
+        )
