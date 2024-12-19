@@ -2,6 +2,7 @@ numpy
 pandas
 matplotlib
 tqdm
+unidecode
 pyspark >= 3.4.0
 pyarrow
 scikit-learn
