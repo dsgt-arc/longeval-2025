@@ -4,7 +4,7 @@ from pathlib import Path
 from pyspark.sql import functions as F
 
 
-class Collection:
+class RawCollection:
     """A class for reading the collection of datasets"""
 
     def __init__(self, spark, path):
@@ -34,15 +34,42 @@ class Collection:
         return df
 
     @property
+    def queries(self):
+        return self.spark.read.csv(
+            f"{self.path}/Queries/*.tsv", sep="\t", schema="qid STRING, query STRING"
+        )
+
+    @property
     def qrels(self):
+        if not (Path(self.path) / "Qrels").exists():
+            return None
         return self.spark.read.csv(
             f"{self.path}/Qrels/*",
             sep=" ",
             schema="qid STRING, rank INT, docid STRING, rel INT",
         )
 
+    def to_parquet(self, path):
+        """Write the collection to parquet format."""
+        self.documents.write.parquet(f"{path}/Documents", mode="overwrite")
+        self.queries.write.parquet(f"{path}/Queries", mode="overwrite")
+        if self.qrels:
+            self.qrels.write.parquet(f"{path}/Qrels", mode="overwrite")
+
+
+class ParquetCollection(RawCollection):
+    """A class for reading a collection of parquet files."""
+
+    @property
+    def documents(self):
+        return self.spark.read.parquet(f"{self.path}/Documents")
+
     @property
     def queries(self):
-        return self.spark.read.csv(
-            f"{self.path}/Queries/*.tsv", sep="\t", schema="qid STRING, query STRING"
-        )
+        return self.spark.read.parquet(f"{self.path}/Queries")
+
+    @property
+    def qrels(self):
+        if not (Path(self.path) / "Qrels").exists():
+            return None
+        return self.spark.read.parquet(f"{self.path}/Qrels")

@@ -1,6 +1,6 @@
 [project]
 name = "longeval"
-version = "0.1.0"
+version = "0.1.1"
 authors = [{ name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" }]
 description = "DS@GT LongEval helper package"
 readme = "README.md"
@@ -10,6 +10,9 @@ dynamic = ["dependencies"]
 [project.urls]
 Homepage = "https://github.com/dsgt-kaggle-clef/longeval-2025"
 Issues = "https://github.com/dsgt-kaggle-clef/longeval-2025/issues"
+
+[project.scripts]
+longeval-etl-parquet = "longeval.etl.parquet.workflow:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
