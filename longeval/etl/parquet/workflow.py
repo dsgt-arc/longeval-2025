@@ -15,8 +15,12 @@ class ParquetCollectionTask(luigi.Task):
         return [
             luigi.LocalTarget(f"{self.output_path}/Documents/_SUCCESS"),
             luigi.LocalTarget(f"{self.output_path}/Queries/_SUCCESS"),
-            luigi.LocalTarget(f"{self.output_path}/Qrels/_SUCCESS"),
-        ]
+        ] + (
+            # only exists in train collections
+            [luigi.LocalTarget(f"{self.output_path}/Qrels/_SUCCESS")]
+            if "train" in str(self.output_path)
+            else []
+        )
 
     def run(self):
         with spark_resource() as spark:
