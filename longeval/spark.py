@@ -16,6 +16,7 @@ def get_spark(
     executor_memory=os.environ.get("PYSPARK_EXECUTOR_MEMORY", "1g"),
     local_dir="/mnt/data/tmp",
     app_name="longeval",
+    enable_opensearch=False,
     **kwargs,
 ):
     """Get a spark session for a single driver."""
@@ -29,8 +30,25 @@ def get_spark(
         .config("spark.driver.maxResultSize", "8g")
         .config("spark.local.dir", local_dir)
         # NOTE: only needed when we're reading TREC or XML files
-        .config("spark.jars.packages", "com.databricks:spark-xml_2.12:0.18.0")
+        .config(
+            "spark.jars.packages",
+            ",".join(
+                ["com.databricks:spark-xml_2.12:0.18.0"]
+                + (
+                    ["org.opensearch:opensearch-spark-standalone_2.12:0.7.0-SNAPSHOT"]
+                    if enable_opensearch
+                    else []
+                )
+            ),
+        )
     )
+    if enable_opensearch:
+        builder = builder.config(
+            "spark.sql.extensions", "org.opensearch.flint.spark.FlintSparkExtensions"
+        ).config(
+            "spark.sql.catalog.dev",
+            "org.apache.spark.opensearch.catalog.OpenSearchCatalog",
+        )
     for k, v in kwargs.items():
         builder = builder.config(k, v)
     return builder.appName(app_name).master(f"local[{cores}]").getOrCreate()
