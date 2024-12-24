@@ -10,6 +10,7 @@ luigi
 google-api-python-client
 google-auth
 google-cloud-storage
+opensearch-py
 
 # developer tools
 jupyterlab
