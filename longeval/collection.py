@@ -14,16 +14,18 @@ class RawCollection:
     def _filename_udf(self, path):
         return F.udf(lambda p: Path(p).name)(path)
 
-    def _extract_attr_udf(self, attr, col="_corrupt_record", use_udf=False):
-        return F.when(F.expr(f"{col} is null"), F.col(attr)).otherwise(
-            F.udf(
-                lambda s: (s or f"<{attr}>")
-                .split(f"<{attr}>")[1]
-                .split(f"</{attr}>")[0]
-            )(col)
-            if use_udf
-            else F.regexp_extract(F.col(col), f"<{attr}>(.*?)</{attr}>", 1)
-        )
+    @property
+    def metadata(self):
+        """Get the parts from the path
+
+        test/2023_04/English -> {"language": "English", "date": "2023_04", "split": "test"}
+        """
+        parts = list(Path(self.path).parts)
+        return {
+            "language": parts[-1],
+            "date": parts[-2],
+            "split": parts[-3],
+        }
 
     @property
     def documents(self):

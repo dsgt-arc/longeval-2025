@@ -12,7 +12,7 @@ Homepage = "https://github.com/dsgt-kaggle-clef/longeval-2025"
 Issues = "https://github.com/dsgt-kaggle-clef/longeval-2025/issues"
 
 [project.scripts]
-longeval-etl-parquet = "longeval.etl.parquet.workflow:main"
+longeval = "longeval.cli:app"
 
 [build-system]
 requires = ["setuptools>=61.0"]

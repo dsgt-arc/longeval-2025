@@ -4,7 +4,8 @@ import luigi
 from longeval.collection import RawCollection
 from longeval.spark import spark_resource
 from pathlib import Path
-from argparse import ArgumentParser
+import typer
+from typing_extensions import Annotated
 
 
 class ParquetCollectionTask(luigi.Task):
@@ -57,23 +58,12 @@ class Workflow(luigi.Task):
         yield tasks
 
 
-def main():
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--scheduler-host",
-        type=str,
-        default=None,
-        help="run luigid, typically localhost:8082",
-    )
-    args = parser.parse_args()
+def main(scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None):
+    """Convert raw data to parquet"""
     kwargs = {}
-    if args.scheduler_host:
-        kwargs["scheduler_host"] = args.scheduler_host
+    if scheduler_host:
+        kwargs["scheduler_host"] = scheduler_host
     else:
         kwargs["local_scheduler"] = True
 
     luigi.build([Workflow()], **kwargs)
-
-
-if __name__ == "__main__":
-    main()
