@@ -93,8 +93,8 @@ class OpenSearchLoadTask(luigi.Task):
             with Timer() as timer:
                 (
                     collection.documents.write.format("opensearch")
-                    .option("es.nodes", self.opensearch_host.split(":")[0])
-                    .option("es.port", self.opensearch_host.split(":")[1])
+                    .option("opensearch.nodes", self.opensearch_host.split(":")[0])
+                    .option("opensearch.port", self.opensearch_host.split(":")[1])
                     .option("opensearch.nodes.wan.only", "true")
                     .mode("overwrite")
                     .save(index_name)
