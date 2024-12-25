@@ -4,7 +4,6 @@ services:
     image: opensearchproject/opensearch:2
     ports:
       - 9200:9200
-      - 9600:9600
     volumes:
       # mount the data directory to persist the data
       - ./data/longeval/opensearch-v1:/usr/share/opensearch/data
@@ -13,8 +12,9 @@ services:
       - plugins.security.disabled=true
       - discovery.type=single-node
       - bootstrap.memory_lock=true
+      - cluster.allocator.existing_shards_allocator.batch_enabled=true
       # no replicas for single-node setup
-      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx8g
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx16g
     ulimits:
       memlock:
         soft: -1 # Set memlock to unlimited (no soft or hard limit)
@@ -22,3 +22,14 @@ services:
       nofile:
         soft: 65536 # Maximum number of open files for the opensearch user - set to at least 65536
         hard: 65536
+  # add the opensearch ui too
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    ports:
+      - 5601:5601
+    environment:
+      # https://stackoverflow.com/questions/74178194/how-can-i-remove-the-login-page-when-running-opensearch-dashboards-in-docker
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+    depends_on:
+      - opensearch
