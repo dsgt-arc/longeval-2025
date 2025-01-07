@@ -1,12 +1,17 @@
 # longeval-2025
 
+Code for the DS@GT CLEF 2025 LongEval team.
+Refer to [docs](docs/) for more information.
+
 ## quickstart
 
 Install the package into your environment:
 
 ```bash
 pip install -e .
+
+# install pyspark connectors
+./scripts/spark-jars.sh
 ```
 
-Many of the jobs are broken down into workflow tasks inside of the module that depend on luigi.
-Run `luigid` in the background and then run the relevant workflow task to generate data.
+This will add a command line tool `longeval` to your environment.
