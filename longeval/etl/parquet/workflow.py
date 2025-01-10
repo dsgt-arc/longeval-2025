@@ -30,7 +30,8 @@ class ParquetCollectionTask(luigi.Task):
 
 
 class Workflow(luigi.Task):
-    root = luigi.Parameter(default="/mnt/data/longeval")
+    input_path = luigi.Parameter(default="/mnt/data/longeval")
+    output_path = luigi.Parameter(default="/mnt/data/longeval")
 
     def _get_collection_roots(self, root):
         # look for all directories that have Documents and Queries as subdirectories
@@ -42,13 +43,13 @@ class Workflow(luigi.Task):
 
     def run(self):
         tasks = []
-        for collection_root in self._get_collection_roots(f"{self.root}/raw"):
+        for collection_root in self._get_collection_roots(f"{self.input_path}/raw"):
             # let's rename a few of the parts before we write this to parquet
             #   raw -> parquet
-            parts = list(Path(collection_root).relative_to(self.root).parts)
+            parts = list(Path(collection_root).relative_to(self.input_path).parts)
             parts[0] = "parquet"
             parts[1] = "train" if "train" in parts[1].lower() else "test"
-            output_path = Path(self.root, *parts)
+            output_path = Path(self.output_path, *parts)
             tasks.append(
                 ParquetCollectionTask(
                     input_path=collection_root,
@@ -58,7 +59,15 @@ class Workflow(luigi.Task):
         yield tasks
 
 
-def main(scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None):
+def main(
+    input_path: Annotated[
+        str, typer.Argument(help="Input root directory")
+    ] = "/mnt/data/longeval",
+    output_path: Annotated[
+        str, typer.Argument(help="Output root directory")
+    ] = "/mnt/data/longeval",
+    scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
+):
     """Convert raw data to parquet"""
     kwargs = {}
     if scheduler_host:
@@ -66,4 +75,7 @@ def main(scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] =
     else:
         kwargs["local_scheduler"] = True
 
-    luigi.build([Workflow()], **kwargs)
+    luigi.build(
+        [Workflow(input_path=input_path, output_path=output_path)],
+        **kwargs,
+    )
