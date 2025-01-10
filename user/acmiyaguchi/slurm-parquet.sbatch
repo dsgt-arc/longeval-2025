@@ -45,7 +45,7 @@ unzip -o $SCRATCH_DIR/raw/LongEvalTrainCollection.zip -d $SCRATCH_DIR/raw/ &
 unzip -o $SCRATCH_DIR/raw/LongEvalTestCollection.zip -d $SCRATCH_DIR/raw/ &
 time wait
 
-export PYSPARK_LOCAL_DIR=$TMPDIR/spark-tmp
+export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 longeval etl parquet $SCRATCH_DIR $SCRATCH_DIR
 
 # rsync the results back to the shared data
