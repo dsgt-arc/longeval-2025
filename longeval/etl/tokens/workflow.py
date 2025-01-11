@@ -58,10 +58,13 @@ class TokenTask(luigi.Task):
 
 
 class Workflow(luigi.Task):
-    root = luigi.Parameter(default="/mnt/data/longeval")
+    input_path = luigi.Parameter(default="/mnt/data/longeval")
+    output_path = luigi.Parameter(default="/mnt/data/longeval")
 
     def dependencies(self):
-        return [ParquetWorkflow(root=self.root)]
+        return [
+            ParquetWorkflow(input_path=self.input_path, output_path=self.output_path)
+        ]
 
     def _get_collection_roots(self, root):
         # look for all directories that have Documents and Queries as subdirectories
@@ -73,10 +76,12 @@ class Workflow(luigi.Task):
 
     def run(self):
         tasks = []
-        parquet_root = Path(self.root) / "parquet"
+        parquet_root = Path(self.input_path) / "parquet"
         for collection_root in self._get_collection_roots(parquet_root):
             output_path = (
-                Path(self.root) / "tokens" / collection_root.relative_to(parquet_root)
+                Path(self.output_path)
+                / "tokens"
+                / collection_root.relative_to(parquet_root)
             )
             tasks.append(
                 TokenTask(
@@ -87,7 +92,15 @@ class Workflow(luigi.Task):
         yield tasks
 
 
-def main(scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None):
+def main(
+    input_path: Annotated[
+        str, typer.Argument(help="Input root directory")
+    ] = "/mnt/data/longeval",
+    output_path: Annotated[
+        str, typer.Argument(help="Output root directory")
+    ] = "/mnt/data/longeval",
+    scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
+):
     """Count the number of tokens in the collection"""
     kwargs = {}
     if scheduler_host:
@@ -95,4 +108,7 @@ def main(scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] =
     else:
         kwargs["local_scheduler"] = True
 
-    luigi.build([Workflow()], **kwargs)
+    luigi.build(
+        [Workflow(input_path=input_path, output_path=output_path)],
+        **kwargs,
+    )
