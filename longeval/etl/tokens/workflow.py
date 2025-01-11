@@ -57,6 +57,54 @@ class TokenTask(luigi.Task):
             ).show()
 
 
+class SummarizeTokenTask(luigi.Task):
+    """Find how many tokens are part of the collection"""
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+
+    def output(self):
+        return luigi.LocalTarget(f"{self.output_path}/_SUCCESS")
+
+    def run(self):
+        with spark_resource() as spark:
+            df = spark.read.parquet(f"{self.input_path}/*/*/*").cache()
+            # make sure output path exists
+            Path(self.output_path).mkdir(parents=True, exist_ok=True)
+            stats = (
+                df.where(F.col("collection") == "documents")
+                .groupBy("split", "language", "collection", "date")
+                .agg(
+                    F.sum("tokens").alias("sum_tokens"),
+                    F.sum("words").alias("sum_words"),
+                )
+                # divided by 1m
+                .withColumn("sum_tokens_pm", F.col("sum_tokens") / 1_000_000)
+                .withColumn("sum_words_pm", F.col("sum_words") / 1_000_000)
+            )
+            stats.show()
+            stats.toPandas().to_csv(f"{self.output_path}/documents.csv", index=False)
+
+            stats = (
+                df.where(F.col("collection") == "documents")
+                .groupBy("split", "language")
+                .agg(
+                    F.sum("tokens").alias("sum_tokens"),
+                    F.sum("words").alias("sum_words"),
+                )
+                # divided by 1m
+                .withColumn("sum_tokens_pm", F.col("sum_tokens") / 1_000_000)
+                .withColumn("sum_words_pm", F.col("sum_words") / 1_000_000)
+            )
+            stats.show()
+            stats.toPandas().to_csv(
+                f"{self.output_path}/documents_split.csv", index=False
+            )
+
+            with open(self.output().path, "w") as f:
+                f.write("")
+
+
 class Workflow(luigi.Task):
     input_path = luigi.Parameter(default="/mnt/data/longeval")
     output_path = luigi.Parameter(default="/mnt/data/longeval")
@@ -85,11 +133,15 @@ class Workflow(luigi.Task):
             )
             tasks.append(
                 TokenTask(
-                    input_path=collection_root,
-                    output_path=output_path,
+                    input_path=collection_root.as_posix(),
+                    output_path=output_path.as_posix(),
                 )
             )
         yield tasks
+        yield SummarizeTokenTask(
+            input_path=(Path(self.output_path) / "tokens").as_posix(),
+            output_path=(Path(self.output_path) / "tokens_stats").as_posix(),
+        )
 
 
 def main(
