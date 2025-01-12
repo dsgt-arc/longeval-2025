@@ -27,7 +27,7 @@ class ProcessSentenceTransformer(luigi.Task):
             stages=[
                 WrappedSentenceTransformer(
                     input_col="text",
-                    output_col="transformer",
+                    output_col="transformed",
                     model_name=self.model_name,
                     batch_size=self.batch_size,
                 )
