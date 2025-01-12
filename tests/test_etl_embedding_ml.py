@@ -14,14 +14,14 @@ def df(spark):
     )
 
 
-def test_wrapped_sentence_transformer(spark, df):
+def test_wrapped_sentence_transformer(df):
     model = WrappedSentenceTransformer(
         input_col="text",
         output_col="transformed",
         model_name="all-MiniLM-L6-v2",
         batch_size=8,
     )
-    transformed = model.transform(df)
+    transformed = model.transform(df).cache()
     assert transformed.count() == 2
     assert transformed.columns == ["text", "transformed"]
     row = transformed.select("transformed").first()

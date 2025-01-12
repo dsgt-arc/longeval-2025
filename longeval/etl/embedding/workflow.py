@@ -13,7 +13,7 @@ class ProcessSentenceTransformer(luigi.Task):
     output_path = luigi.Parameter()
     num_partitions = luigi.IntParameter(default=200)
     model_name = luigi.Parameter(default="all-MiniLM-L6-v2")
-    batch_size = luigi.IntParameter(default=8)
+    batch_size = luigi.IntParameter(default=20)
 
     def output(self):
         return luigi.LocalTarget(f"{self.output_path}/_SUCCESS")
