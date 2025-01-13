@@ -1,0 +1,523 @@
+---------------------------------------
+Begin Slurm Prolog: Jan-13-2025 01:53:26
+Job ID:    2481219
+User ID:   amiyaguchi3
+Account:   paceship-dsgt_clef2025
+Job name:  longeval-luigi-dist
+Partition: cpu-small
+QOS:       inferno
+---------------------------------------
+Requirement already satisfied: luigi in ./venv/lib/python3.9/site-packages (3.6.0)
+Requirement already satisfied: python-dateutil<3,>=2.7.5 in ./venv/lib/python3.9/site-packages (from luigi) (2.9.0.post0)
+Requirement already satisfied: tenacity<9,>=8 in ./venv/lib/python3.9/site-packages (from luigi) (8.5.0)
+Requirement already satisfied: tornado<7,>=5.0 in ./venv/lib/python3.9/site-packages (from luigi) (6.4.2)
+Requirement already satisfied: python-daemon in ./venv/lib/python3.9/site-packages (from luigi) (3.1.2)
+Requirement already satisfied: six>=1.5 in ./venv/lib/python3.9/site-packages (from python-dateutil<3,>=2.7.5->luigi) (1.17.0)
+Requirement already satisfied: lockfile>=0.10 in ./venv/lib/python3.9/site-packages (from python-daemon->luigi) (0.12.2)
+Running on atl1-1-02-002-27-1.pace.gatech.edu
+atl1-1-02-002-27-1.pace.gatech.edu
+atl1-1-02-002-28-1.pace.gatech.edu
+atl1-1-02-002-28-2.pace.gatech.edu
+atl1-1-02-002-27-2.pace.gatech.edu
+2025-01-13 01:53:33,467 luigi[3299184] INFO: logging configured by default settings
+2025-01-13 01:53:33,468 luigi.scheduler[3299184] INFO: No prior state file exists at /var/lib/luigi-server/state.pickle. Starting with empty state
+2025-01-13 01:53:33,472 luigi.server[3299184] INFO: Scheduler starting up
+2025-01-13 01:53:33,762 tornado.access[3299184] INFO: 302 GET / (::1) 11.47ms
++ sleep 1
++ sleep 1
++ sleep 1
++ sleep 1
++ python workflow.py --output-path /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212 --scheduler-host atl1-1-02-002-27-1.pace.gatech.edu
++ python workflow.py --output-path /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212 --scheduler-host atl1-1-02-002-27-1.pace.gatech.edu
++ python workflow.py --output-path /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212 --scheduler-host atl1-1-02-002-27-1.pace.gatech.edu
++ python workflow.py --output-path /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212 --scheduler-host atl1-1-02-002-27-1.pace.gatech.edu
+DEBUG: Checking if Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=) is complete
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+DEBUG: Checking if Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=) is complete
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_2, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_4, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_2, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_5, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_6, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_4, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_5, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_8, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_6, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_9, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_8, delay=10) is complete
+DEBUG: Checking if Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=) is complete
+Sample ID: None
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_9, delay=10) is complete
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+2025-01-13 01:53:35,525 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 2.07ms
+2025-01-13 01:53:35,527 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 1.07ms
+INFO: Informed scheduler that task   Workflow_10__storage_home_hc__08f0d331ac   has status   PENDING
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_2, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_4, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_5, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_6, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_8, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_9, delay=10) is complete
+INFO: Informed scheduler that task   Workflow_10__storage_home_hc__08f0d331ac   has status   PENDING
+2025-01-13 01:53:35,529 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.83ms
+2025-01-13 01:53:35,531 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 0.82ms
+2025-01-13 01:53:35,532 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 1.08ms
+2025-01-13 01:53:35,533 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.82ms
+2025-01-13 01:53:35,534 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 0.79ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_9e9cb82c7e   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_9e9cb82c7e   has status   PENDING
+INFO: Informed scheduler that task   Workflow_10__storage_home_hc__08f0d331ac   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_83d4d12dae   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_83d4d12dae   has status   PENDING
+2025-01-13 01:53:35,544 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 2.02ms
+2025-01-13 01:53:35,544 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 1.66ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_9e9cb82c7e   has status   PENDING
+2025-01-13 01:53:35,544 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 1.42ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e9b0f5b986   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e9b0f5b986   has status   PENDING
+DEBUG: Checking if Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=) is complete
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+2025-01-13 01:53:35,548 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.82ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_83d4d12dae   has status   PENDING
+2025-01-13 01:53:35,549 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 1.53ms
+2025-01-13 01:53:35,550 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 1.07ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_f434cca6c6   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_f434cca6c6   has status   PENDING
+2025-01-13 01:53:35,553 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.83ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e9b0f5b986   has status   PENDING
+2025-01-13 01:53:35,554 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.93ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_b26f9cf3eb   has status   PENDING
+2025-01-13 01:53:35,555 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 0.92ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_b26f9cf3eb   has status   PENDING
+2025-01-13 01:53:35,556 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.83ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_f434cca6c6   has status   PENDING
+2025-01-13 01:53:35,558 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.91ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e268360501   has status   PENDING
+2025-01-13 01:53:35,559 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 0.90ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e268360501   has status   PENDING
+2025-01-13 01:53:35,560 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.81ms
+Sample ID: None
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_b26f9cf3eb   has status   PENDING
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) is complete
+2025-01-13 01:53:35,563 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 2.12ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e0f98019dd   has status   PENDING
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_2, delay=10) is complete
+2025-01-13 01:53:35,565 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 1.65ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e0f98019dd   has status   PENDING
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_4, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_5, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_6, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7, delay=10) is complete
+2025-01-13 01:53:35,568 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 2.74ms
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_8, delay=10) is complete
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e268360501   has status   PENDING
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_9, delay=10) is complete
+2025-01-13 01:53:35,573 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 5.20ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_1a23e12f62   has status   PENDING
+2025-01-13 01:53:35,574 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 0.99ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_1a23e12f62   has status   PENDING
+2025-01-13 01:53:35,576 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.99ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e0f98019dd   has status   PENDING
+INFO: Informed scheduler that task   Workflow_10__storage_home_hc__08f0d331ac   has status   PENDING
+2025-01-13 01:53:35,581 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 4.67ms
+2025-01-13 01:53:35,582 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 4.42ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_99011be763   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_9e9cb82c7e   has status   PENDING
+2025-01-13 01:53:35,586 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 4.54ms
+2025-01-13 01:53:35,587 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 4.10ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_99011be763   has status   PENDING
+2025-01-13 01:53:35,588 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.95ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_1a23e12f62   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_83d4d12dae   has status   PENDING
+2025-01-13 01:53:35,592 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.96ms
+2025-01-13 01:53:35,594 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 1.40ms
+2025-01-13 01:53:35,594 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 1.10ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_99011be763   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_3064ec052a   has status   PENDING
+INFO: Done scheduling tasks
+INFO: Running Worker with 1 processes
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e9b0f5b986   has status   PENDING
+2025-01-13 01:53:35,598 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 4.02ms
+2025-01-13 01:53:35,601 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 2.02ms
+2025-01-13 01:53:35,601 tornado.access[3299184] INFO: 200 POST /api/add_worker (172.27.149.48) 1.55ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_3064ec052a   has status   PENDING
+INFO: Done scheduling tasks
+DEBUG: Asking scheduler for work...
+INFO: Running Worker with 1 processes
+2025-01-13 01:53:35,601 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 1.44ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_3064ec052a   has status   PENDING
+INFO: Done scheduling tasks
+INFO: Running Worker with 1 processes
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_f434cca6c6   has status   PENDING
+2025-01-13 01:53:35,606 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.94ms
+2025-01-13 01:53:35,608 tornado.access[3299184] INFO: 200 POST /api/add_worker (172.27.149.45) 1.92ms
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:35,608 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.48) 1.64ms
+2025-01-13 01:53:35,609 tornado.access[3299184] INFO: 200 POST /api/add_worker (172.27.149.47) 1.36ms
+DEBUG: Pending tasks: 11
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10)
+DEBUG: Asking scheduler for work...
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_b26f9cf3eb   has status   PENDING
+2025-01-13 01:53:35,613 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.95ms
+2025-01-13 01:53:35,615 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.45) 1.51ms
+DEBUG: Pending tasks: 10
+2025-01-13 01:53:35,615 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.47) 1.44ms
+INFO: [pid 57652] Worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_8, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_8
+DEBUG: Pending tasks: 9
+INFO: [pid 580318] Worker Worker(salt=4388026349, workers=1, host=atl1-1-02-002-28-2.pace.gatech.edu, username=amiyaguchi3, pid=580318) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_5, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_5
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e268360501   has status   PENDING
+2025-01-13 01:53:35,620 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 4.00ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e0f98019dd   has status   PENDING
+2025-01-13 01:53:35,624 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.84ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_1a23e12f62   has status   PENDING
+2025-01-13 01:53:35,628 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.72ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_99011be763   has status   PENDING
+2025-01-13 01:53:35,632 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.73ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_3064ec052a   has status   PENDING
+INFO: Done scheduling tasks
+INFO: Running Worker with 1 processes
+2025-01-13 01:53:35,636 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.80ms
+2025-01-13 01:53:35,637 tornado.access[3299184] INFO: 200 POST /api/add_worker (172.27.149.46) 0.71ms
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:35,641 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.46) 0.97ms
+DEBUG: Pending tasks: 8
+INFO: [pid 3299213] Worker Worker(salt=6394846931, workers=1, host=atl1-1-02-002-27-1.pace.gatech.edu, username=amiyaguchi3, pid=3299213) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1
+2025-01-13 01:53:36,517 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:36,518 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:36,524 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.68ms
+2025-01-13 01:53:36,558 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 0.69ms
+2025-01-13 01:53:37,521 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.69ms
+2025-01-13 01:53:37,522 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:37,528 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:37,562 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.09ms
+2025-01-13 01:53:38,524 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.69ms
+2025-01-13 01:53:38,525 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:38,531 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:38,566 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.08ms
+2025-01-13 01:53:39,527 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:39,528 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:39,534 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:39,569 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.08ms
+2025-01-13 01:53:40,531 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.69ms
+2025-01-13 01:53:40,532 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:40,537 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:40,572 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.09ms
+2025-01-13 01:53:41,534 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.71ms
+2025-01-13 01:53:41,535 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:41,541 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:41,576 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.08ms
+2025-01-13 01:53:42,537 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.67ms
+2025-01-13 01:53:42,538 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:42,544 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:42,579 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.08ms
+2025-01-13 01:53:43,540 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:43,541 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:43,547 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:43,582 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+2025-01-13 01:53:44,544 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:44,545 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:44,550 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:44,586 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.08ms
+2025-01-13 01:53:45,547 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:45,548 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:45,554 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:45,589 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+2025-01-13 01:53:45,634 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.82ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_3064ec052a   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:45,637 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.48) 0.95ms
+DEBUG: Pending tasks: 7
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_9, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_9
+INFO: [pid 57652] Worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_8, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+INFO: [pid 580318] Worker Worker(salt=4388026349, workers=1, host=atl1-1-02-002-28-2.pace.gatech.edu, username=amiyaguchi3, pid=580318) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_5, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+2025-01-13 01:53:45,643 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.81ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_83d4d12dae   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:45,644 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 0.99ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_b26f9cf3eb   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:45,646 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.45) 0.90ms
+DEBUG: Pending tasks: 6
+INFO: [pid 57652] Worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_4, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_4
+2025-01-13 01:53:45,648 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.47) 1.16ms
+DEBUG: Pending tasks: 5
+INFO: [pid 580318] Worker Worker(salt=4388026349, workers=1, host=atl1-1-02-002-28-2.pace.gatech.edu, username=amiyaguchi3, pid=580318) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_2, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_2
+INFO: [pid 3299213] Worker Worker(salt=6394846931, workers=1, host=atl1-1-02-002-27-1.pace.gatech.edu, username=amiyaguchi3, pid=3299213) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_99011be763   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:45,673 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.64ms
+DEBUG: Pending tasks: 4
+INFO: [pid 3299213] Worker Worker(salt=6394846931, workers=1, host=atl1-1-02-002-27-1.pace.gatech.edu, username=amiyaguchi3, pid=3299213) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_6, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_6
+2025-01-13 01:53:45,675 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.46) 1.94ms
+2025-01-13 01:53:46,550 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:46,551 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:46,557 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:46,593 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.09ms
+2025-01-13 01:53:47,554 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.69ms
+2025-01-13 01:53:47,555 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:47,560 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:47,596 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.08ms
+2025-01-13 01:53:48,557 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.69ms
+2025-01-13 01:53:48,558 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:48,563 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:48,599 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.08ms
+2025-01-13 01:53:49,560 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:49,561 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:49,566 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:49,603 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+2025-01-13 01:53:50,564 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.69ms
+2025-01-13 01:53:50,565 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:50,570 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:50,606 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+2025-01-13 01:53:51,567 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.67ms
+2025-01-13 01:53:51,568 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:51,573 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:51,609 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+2025-01-13 01:53:52,570 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:52,571 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:52,576 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:52,613 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+2025-01-13 01:53:53,574 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:53,575 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:53,579 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:53,616 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+2025-01-13 01:53:54,577 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:54,578 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.66ms
+2025-01-13 01:53:54,583 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:54,619 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.07ms
+2025-01-13 01:53:55,580 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.66ms
+2025-01-13 01:53:55,582 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.47) 0.67ms
+2025-01-13 01:53:55,586 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:53:55,623 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.46) 1.06ms
+INFO: [pid 57652] Worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_4, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_9, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+2025-01-13 01:53:55,661 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.81ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e268360501   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:55,663 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.80ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_9e9cb82c7e   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:55,665 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.45) 0.90ms
+DEBUG: Pending tasks: 3
+INFO: [pid 57652] Worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3
+2025-01-13 01:53:55,666 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.48) 0.91ms
+DEBUG: Pending tasks: 2
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7
+INFO: [pid 580318] Worker Worker(salt=4388026349, workers=1, host=atl1-1-02-002-28-2.pace.gatech.edu, username=amiyaguchi3, pid=580318) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_2, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+2025-01-13 01:53:55,674 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.47) 0.81ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_1a23e12f62   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:55,678 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.47) 0.88ms
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_f434cca6c6 is currently run by worker Worker(salt=6394846931, workers=1, host=atl1-1-02-002-27-1.pace.gatech.edu, username=amiyaguchi3, pid=3299213)
+DEBUG: DummyTask_10__storage_home_hc_e0f98019dd is currently run by worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652)
+DEBUG: DummyTask_10__storage_home_hc_e9b0f5b986 is currently run by worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787)
+INFO: Worker Worker(salt=4388026349, workers=1, host=atl1-1-02-002-28-2.pace.gatech.edu, username=amiyaguchi3, pid=580318) was stopped. Shutting down Keep-Alive thread
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+INFO:
+===== Luigi Execution Summary =====
+
+Scheduled 11 tasks of which:
+* 2 ran successfully:
+    - 2 DummyTask(...)
+* 9 were left pending, among these:
+    * 3 were being run by another worker:
+        - 3 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10) ...
+    * 1 had dependencies that were being run by other worker:
+        - 1 Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=)
+    * 5 was not granted run permission by the scheduler:
+        - 5 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) ...
+
+The other workers were:
+    - Worker(salt=6394846931, workers=1, host=atl1-1-02-002-27-1.pace.gatech.edu, username=amiyaguchi3, pid=3299213) ran 1 tasks
+    - Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) ran 1 tasks
+    - Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) ran 1 tasks
+
+
+This progress looks :| because there were tasks that were not granted run permission by the scheduler
+
+===== Luigi Execution Summary =====
+
+INFO: [pid 3299213] Worker Worker(salt=6394846931, workers=1, host=atl1-1-02-002-27-1.pace.gatech.edu, username=amiyaguchi3, pid=3299213) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_6, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_f434cca6c6   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:53:55,704 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.46) 3.68ms
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_e0f98019dd is currently run by worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652)
+DEBUG: DummyTask_10__storage_home_hc_e9b0f5b986 is currently run by worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787)
+INFO: Worker Worker(salt=6394846931, workers=1, host=atl1-1-02-002-27-1.pace.gatech.edu, username=amiyaguchi3, pid=3299213) was stopped. Shutting down Keep-Alive thread
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+INFO:
+===== Luigi Execution Summary =====
+
+Scheduled 11 tasks of which:
+* 2 ran successfully:
+    - 2 DummyTask(...)
+* 9 were left pending, among these:
+    * 2 were being run by another worker:
+        - 2 DummyTask(...)
+    * 1 had dependencies that were being run by other worker:
+        - 1 Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=)
+    * 6 was not granted run permission by the scheduler:
+        - 6 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) ...
+
+The other workers were:
+    - Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) ran 1 tasks
+    - Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) ran 1 tasks
+
+
+This progress looks :| because there were tasks that were not granted run permission by the scheduler
+
+===== Luigi Execution Summary =====
+
+2025-01-13 01:53:55,718 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.46) 13.93ms
+2025-01-13 01:53:56,584 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.91ms
+2025-01-13 01:53:56,589 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.73ms
+2025-01-13 01:53:57,587 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:57,592 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:58,590 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:53:58,596 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:53:59,594 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.69ms
+2025-01-13 01:53:59,599 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:54:00,597 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:54:00,602 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:54:01,600 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.67ms
+2025-01-13 01:54:01,605 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:54:02,603 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:54:02,609 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+2025-01-13 01:54:03,607 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:54:03,612 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.68ms
+2025-01-13 01:54:04,610 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.68ms
+2025-01-13 01:54:04,615 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.66ms
+2025-01-13 01:54:05,613 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.48) 0.67ms
+2025-01-13 01:54:05,618 tornado.access[3299184] INFO: 200 POST /api/ping (172.27.149.45) 0.67ms
+INFO: [pid 57652] Worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+2025-01-13 01:54:05,681 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.45) 0.83ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e0f98019dd   has status   DONE
+DEBUG: Asking scheduler for work...
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7, delay=10)
+DEBUG: 1 running tasks, waiting for next task to finish
+2025-01-13 01:54:05,684 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.45) 0.81ms
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_e9b0f5b986 is currently run by worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787)
+INFO: Worker Worker(salt=9924448053, workers=1, host=atl1-1-02-002-28-1.pace.gatech.edu, username=amiyaguchi3, pid=57652) was stopped. Shutting down Keep-Alive thread
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+2025-01-13 01:54:05,687 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.83ms
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e9b0f5b986   has status   DONE
+DEBUG: Asking scheduler for work...
+INFO:
+===== Luigi Execution Summary =====
+
+Scheduled 11 tasks of which:
+* 3 ran successfully:
+    - 3 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_3, delay=10) ...
+* 8 were left pending, among these:
+    * 1 were being run by another worker:
+        - 1 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_7, delay=10)
+    * 1 had dependencies that were being run by other worker:
+        - 1 Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=)
+    * 6 was not granted run permission by the scheduler:
+        - 6 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) ...
+
+The other workers were:
+    - Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) ran 1 tasks
+
+
+This progress looks :| because there were tasks that were not granted run permission by the scheduler
+
+===== Luigi Execution Summary =====
+
+2025-01-13 01:54:05,690 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.48) 0.79ms
+DEBUG: Pending tasks: 1
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) running   Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=)
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+INFO: [pid 643787] Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) done      Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=)
+DEBUG: 1 running tasks, waiting for next task to finish
+2025-01-13 01:54:05,698 tornado.access[3299184] INFO: 200 POST /api/add_task (172.27.149.48) 0.90ms
+INFO: Informed scheduler that task   Workflow_10__storage_home_hc__08f0d331ac   has status   DONE
+DEBUG: Asking scheduler for work...
+2025-01-13 01:54:05,702 tornado.access[3299184] INFO: 200 POST /api/get_work (172.27.149.48) 0.73ms
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+INFO: Worker Worker(salt=4672090477, workers=1, host=atl1-1-02-002-27-2.pace.gatech.edu, username=amiyaguchi3, pid=643787) was stopped. Shutting down Keep-Alive thread
+INFO:
+===== Luigi Execution Summary =====
+
+Scheduled 11 tasks of which:
+* 4 ran successfully:
+    - 3 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_0, delay=10) ...
+    - 1 Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212, num_tasks=10, sample_id=)
+* 7 were left pending, among these:
+    * 7 was not granted run permission by the scheduler:
+        - 7 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751212/task_1, delay=10) ...
+
+This progress looks :| because there were tasks that were not granted run permission by the scheduler
+
+===== Luigi Execution Summary =====
+
+2025-01-13 01:54:05,743 luigi.server[3299184] INFO: Scheduler instance shutting down
+---------------------------------------
+Begin Slurm Epilog: Jan-13-2025 01:54:06
+Job ID:        2481219
+Array Job ID:  _4294967294
+User ID:       amiyaguchi3
+Account:       paceship-dsgt_clef2025
+Job name:      longeval-luigi-dist
+Resources:     cpu=4,mem=4G,node=4
+Rsrc Used:     cput=00:02:40,vmem=0,walltime=00:00:40,mem=40040K,energy_used=0
+Partition:     cpu-small
+QOS:           inferno
+Nodes:         atl1-1-02-002-27-[1-2],atl1-1-02-002-28-[1-2]
+---------------------------------------

@@ -22,7 +22,7 @@ class DummyTask(luigi.Task):
             f.write("")
 
 
-class Workflow(luigi.Task):
+class Workflow(luigi.WrapperTask):
     """A dummy workflow with two tasks."""
 
     output_path = luigi.Parameter()
@@ -30,7 +30,7 @@ class Workflow(luigi.Task):
     # NOTE: do not use task_id as it is a reserved keyword
     sample_id = luigi.OptionalIntParameter()
 
-    def run(self):
+    def requires(self):
         # either we run a single task or we run all the tasts
         print("Sample ID:", self.sample_id, flush=True)
         if self.sample_id is not None:

@@ -1,0 +1,229 @@
+---------------------------------------
+Begin Slurm Prolog: Jan-13-2025 01:53:12
+Job ID:    2481218
+User ID:   amiyaguchi3
+Account:   paceship-dsgt_clef2025
+Job name:  longeval-luigi-local
+Partition: cpu-small
+QOS:       inferno
+---------------------------------------
+Requirement already satisfied: luigi in ./venv/lib/python3.9/site-packages (3.6.0)
+Requirement already satisfied: python-dateutil<3,>=2.7.5 in ./venv/lib/python3.9/site-packages (from luigi) (2.9.0.post0)
+Requirement already satisfied: tenacity<9,>=8 in ./venv/lib/python3.9/site-packages (from luigi) (8.5.0)
+Requirement already satisfied: tornado<7,>=5.0 in ./venv/lib/python3.9/site-packages (from luigi) (6.4.2)
+Requirement already satisfied: python-daemon in ./venv/lib/python3.9/site-packages (from luigi) (3.1.2)
+Requirement already satisfied: six>=1.5 in ./venv/lib/python3.9/site-packages (from python-dateutil<3,>=2.7.5->luigi) (1.17.0)
+Requirement already satisfied: lockfile>=0.10 in ./venv/lib/python3.9/site-packages (from python-daemon->luigi) (0.12.2)
+DEBUG: Checking if Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198, num_tasks=10, sample_id=) is complete
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_0, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_1, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_2, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_3, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_4, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_5, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_6, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_7, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_8, delay=10) is complete
+DEBUG: Checking if DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_9, delay=10) is complete
+INFO: Informed scheduler that task   Workflow_10__storage_home_hc__08333ccbfd   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_d6595957c0   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e0f23779b9   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_41c59c1523   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_67195cb51c   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_d7d081d205   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_61545471aa   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_b389f9664b   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_256d6a556a   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_9b055ae6ec   has status   PENDING
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_510119b64a   has status   PENDING
+INFO: Done scheduling tasks
+INFO: Running Worker with 4 processes
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 11
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 10
+INFO: [pid 769819] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_9, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_9
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 9
+INFO: [pid 769820] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_0, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_0
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 8
+INFO: [pid 769821] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_6, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_6
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769822] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_1, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_1
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769822] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_1, delay=10)
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_9b055ae6ec   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 7
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769833] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_4, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_4
+INFO: [pid 769820] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_0, delay=10)
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_510119b64a   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 6
+INFO: [pid 769821] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_6, delay=10)
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769835] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_7, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_7
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_67195cb51c   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 5
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769819] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_9, delay=10)
+INFO: [pid 769837] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_5, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_5
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_d6595957c0   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 4
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769839] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_8, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_8
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769835] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_7, delay=10)
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_41c59c1523   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 3
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769850] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_2, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_2
+INFO: [pid 769837] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_5, delay=10)
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_d7d081d205   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 2
+DEBUG: 4 running tasks, waiting for next task to finish
+INFO: [pid 769839] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_8, delay=10)
+INFO: [pid 769833] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_4, delay=10)
+INFO: [pid 769852] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_3, delay=10)
+Running task: /storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_3
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_61545471aa   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_e0f23779b9 is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_e0f23779b9   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_256d6a556a is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+INFO: [pid 769850] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_2, delay=10)
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_256d6a556a   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: DummyTask_10__storage_home_hc_b389f9664b is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+INFO: [pid 769852] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_3, delay=10)
+INFO: Informed scheduler that task   DummyTask_10__storage_home_hc_b389f9664b   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Pending tasks: 1
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+DEBUG: Workflow_10__storage_home_hc__08333ccbfd is currently run by worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817)
+INFO: [pid 769869] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) running   Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198, num_tasks=10, sample_id=)
+Sample ID: None
+Running tasks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+INFO: [pid 769869] Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) done      Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198, num_tasks=10, sample_id=)
+INFO: Informed scheduler that task   Workflow_10__storage_home_hc__08333ccbfd   has status   DONE
+DEBUG: Asking scheduler for work...
+DEBUG: Done
+DEBUG: There are no more tasks to run at this time
+INFO: Worker Worker(salt=5524880710, workers=4, host=atl1-1-02-003-16-1.pace.gatech.edu, username=amiyaguchi3, pid=769817) was stopped. Shutting down Keep-Alive thread
+INFO:
+===== Luigi Execution Summary =====
+
+Scheduled 11 tasks of which:
+* 11 ran successfully:
+    - 10 DummyTask(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198/task_0, delay=10) ...
+    - 1 Workflow(output_path=/storage/home/hcoda1/8/amiyaguchi3/scratch/tmp/longeval-1736751198, num_tasks=10, sample_id=)
+
+This progress looks :) because there were no failed tasks or missing dependencies
+
+===== Luigi Execution Summary =====
+
+---------------------------------------
+Begin Slurm Epilog: Jan-13-2025 01:53:49
+Job ID:        2481218
+Array Job ID:  _4294967294
+User ID:       amiyaguchi3
+Account:       paceship-dsgt_clef2025
+Job name:      longeval-luigi-local
+Resources:     cpu=2,mem=2G,node=1
+Rsrc Used:     cput=00:01:14,vmem=0,walltime=00:00:37,mem=39468K,energy_used=0
+Partition:     cpu-small
+QOS:           inferno
+Nodes:         atl1-1-02-003-16-1
+---------------------------------------
