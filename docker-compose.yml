@@ -13,6 +13,8 @@ services:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - cluster.allocator.existing_shards_allocator.batch_enabled=true
+      - knn.memory.circuit_breaker.enabled=true
+      - knn.memory.circuit_breaker.limit=256mb
       # no replicas for single-node setup
       - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx16g
     ulimits:
