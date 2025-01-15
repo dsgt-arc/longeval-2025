@@ -21,9 +21,7 @@ pip install -e .
 
 This will add a command line tool `longeval` to your environment.
 
-Establish a strong opensearch password in your terminal session before proceeding. 
-You can check the strength of your password [at this website](https://lowe.github.io/tryzxcvbn/).
+Populate your local .env file before proceeding. 
+For the password variable, you can check the strength of your password [at this website](https://lowe.github.io/tryzxcvbn/).
 
-```commandline
-export OPENSEARCH_PASSWORD=
-```
+

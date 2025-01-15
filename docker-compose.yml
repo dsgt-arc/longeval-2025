@@ -6,7 +6,7 @@ services:
       - 9200:9200
     volumes:
       # mount the data directory to persist the data
-      - ./data/longeval/opensearch-v1:/usr/share/opensearch/data
+      - ${OPENSEARCH_DATA_DIR:-./data/longeval/opensearch-v1}:/usr/share/opensearch/data
     environment:
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD==${OPENSEARCH_PASSWORD?not set}
       - plugins.security.disabled=true
