@@ -22,6 +22,8 @@ def test_wrapped_sentence_transformer(df):
         batch_size=8,
     )
     transformed = model.transform(df).cache()
+    transformed.printSchema()
+    transformed.show()
     assert transformed.count() == 2
     assert transformed.columns == ["text", "transformed"]
     row = transformed.select("transformed").first()

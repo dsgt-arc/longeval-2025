@@ -17,7 +17,7 @@ class SentenceTransformerPipeline(luigi.Task):
     batch_size = luigi.IntParameter(default=20)
 
     def output(self):
-        return luigi.LocalTarget(f"{self.output_path}/_SUCCESS")
+        return luigi.LocalTarget(f"{self.output_path}/metadata/_SUCCESS")
 
     def pipeline(self) -> Pipeline:
         return Pipeline(
@@ -44,6 +44,7 @@ class ProcessSentenceTransformer(luigi.Task):
     sample_id = luigi.IntParameter()
     num_sample_ids = luigi.IntParameter(default=20)
     primary_key = luigi.Parameter(default="docid")
+    feature_columns = luigi.ListParameter(default=["transformed"])
     # controls the number of partitions written to disk, must be at least the number
     # of tasks that we have in parallel to best take advantage of disk
     num_partitions = luigi.IntParameter(default=8)
@@ -64,10 +65,6 @@ class ProcessSentenceTransformer(luigi.Task):
                 batch_size=self.batch_size,
             )
         ]
-
-    @property
-    def feature_columns(self) -> list:
-        raise NotImplementedError()
 
     def transform(self, model, df, features) -> DataFrame:
         transformed = model.transform(df)
@@ -91,15 +88,17 @@ class ProcessSentenceTransformer(luigi.Task):
                 .drop("sample_id")
             )
             # transform the dataframe and write it to disk
+            df = self.transform(
+                PipelineModel.load(f"{self.output_path}/model"),
+                df,
+                self.feature_columns,
+            )
+            df.printSchema()
+            df.explain()
             (
-                self.transform(
-                    PipelineModel.load(f"{self.input().path}/model"),
-                    df,
-                    self.feature_columns,
-                )
-                .repartition(self.num_partitions)
+                df.repartition(self.num_partitions)
                 .write.mode("overwrite")
-                .parquet(f"{self.output_path}/data/sample_{self.sample_id}")
+                .parquet(f"{self.output_path}/data/sample_id={self.sample_id}")
             )
 
 

@@ -2,6 +2,7 @@ import pytest
 from longeval.etl.embedding.workflow import ProcessSentenceTransformer
 from pyspark.sql import Row
 import luigi
+from longeval.spark import get_spark
 
 
 @pytest.fixture
@@ -9,8 +10,8 @@ def df(spark):
     # dataframe with a single text column
     return spark.createDataFrame(
         [
-            Row(text="This is a test sentence."),
-            Row(text="This is another test sentence."),
+            Row(docid="1", text="This is a test sentence."),
+            Row(docid="2", text="This is another test sentence."),
         ]
     )
 
@@ -23,17 +24,20 @@ def temp_parquet(df, tmp_path):
 
 
 def test_process_test_sentence_transformer(spark, temp_parquet, tmp_path):
+    output = tmp_path / "output"
     task = ProcessSentenceTransformer(
         input_path=temp_parquet.as_posix(),
-        output_path=temp_parquet.as_posix(),
+        output_path=output.as_posix(),
         sample_id=0,
         num_sample_ids=1,
         model_name="all-MiniLM-L6-v2",
     )
     luigi.build([task], local_scheduler=True)
-    transformed = spark.read.parquet(f"{temp_parquet}/data/sample_0")
+    # NOTE this kills our spark instance
+    spark = get_spark(app_name="pytest")
+    transformed = spark.read.parquet(f"{output}/data")
     assert transformed.count() == 2
-    assert transformed.columns == ["text", "transformed"]
+    assert transformed.columns == ["docid", "text", "transformed", "sample_id"]
     row = transformed.select("transformed").first()
     assert len(row.transformed) == 384
     assert all(isinstance(x, float) for x in row.transformed)

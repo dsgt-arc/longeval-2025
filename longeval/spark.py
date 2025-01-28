@@ -14,7 +14,7 @@ def get_spark(
     cores=os.cpu_count(),
     memory=os.environ.get("PYSPARK_DRIVER_MEMORY", "16g"),
     executor_memory=os.environ.get("PYSPARK_EXECUTOR_MEMORY", "1g"),
-    local_dir=os.environ.get("SPARK_LOCAL_DIR", "/mnt/data/tmp"),
+    local_dir=os.environ.get("SPARK_LOCAL_DIR", os.environ.get("TMPDIR", "/tmp")),
     app_name="longeval",
     **kwargs,
 ):

@@ -2,8 +2,8 @@
 #SBATCH -Jlongeval-test                         # Job name
 #SBATCH --account=paceship-dsgt_clef2025        # charge account
 #SBATCH -N1 -n1                                 # Number of nodes and cores required
-#SBATCH --cpus-per-task=2                       # Number of cores per task
-#SBATCH --mem-per-cpu=2G                        # Memory per core
+#SBATCH --cpus-per-task=4                       # Number of cores per task
+#SBATCH --mem-per-cpu=4G                        # Memory per core
 #SBATCH -t10                                    # Duration of the job (Ex: 15 mins)
 #SBATCH -qinferno                               # QOS Name
 #SBATCH -oReport-%j.out                         # Combined output and error messages file
