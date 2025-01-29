@@ -6,8 +6,13 @@ import typer
 from typing_extensions import Annotated
 
 
+# models tried
+# all-MiniLM-L6-v2
+# answerdotai/ModernBERT-base
 def main(
-    model_name: Annotated[str, typer.Option(help="Model name")] = "all-MiniLM-L6-v2",
+    model_name: Annotated[
+        str, typer.Option(help="Model name")
+    ] = "answerdotai/ModernBERT-base",
     dry_run: Annotated[bool, typer.Option(help="Dry run")] = False,
 ):
     home = Path(os.getenv("HOME"))

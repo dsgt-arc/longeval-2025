@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=8                       # Number of cores per task
 #SBATCH --mem-per-gpu=32G                       # Memory per core
 #SBATCH -t120                                   # Duration of the job (Ex: 15 mins)
-#SBATCH --array=0-9%10                          # Array range and max jobs
+#SBATCH --array=0-7%8                           # Array range and max jobs
 #SBATCH -qembers                                # QOS Name
 #SBATCH -oReport-%j.out                         # Combined output and error messages file
 #SBATCH --mail-type=END,FAIL                    # Mail preferences
@@ -29,5 +29,5 @@ longeval etl embedding \
     $project_dir/embedding/$model_name/$dataset \
     --model-name $model_name \
     --cpu-count 8 \
-    --num-sample-ids 10 \
+    --num-sample-ids 8 \
     --sample-id $SLURM_ARRAY_TASK_ID

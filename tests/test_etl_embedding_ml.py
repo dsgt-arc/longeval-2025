@@ -14,11 +14,18 @@ def df(spark):
     )
 
 
-def test_wrapped_sentence_transformer(df):
+@pytest.mark.parametrize(
+    "model_name,dim",
+    [
+        ("all-MiniLM-L6-v2", 384),
+        ("answerdotai/ModernBERT-base", 768),
+    ],
+)
+def test_wrapped_sentence_transformer(df, model_name, dim):
     model = WrappedSentenceTransformer(
         input_col="text",
         output_col="transformed",
-        model_name="all-MiniLM-L6-v2",
+        model_name=model_name,
         batch_size=8,
     )
     transformed = model.transform(df).cache()
@@ -27,6 +34,6 @@ def test_wrapped_sentence_transformer(df):
     assert transformed.count() == 2
     assert transformed.columns == ["text", "transformed"]
     row = transformed.select("transformed").first()
-    assert len(row.transformed) == 384
+    assert len(row.transformed) == dim
     assert all(isinstance(x, float) for x in row.transformed)
     transformed.show()
