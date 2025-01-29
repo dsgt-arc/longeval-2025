@@ -10,8 +10,8 @@ def df(spark):
     # dataframe with a single text column
     return spark.createDataFrame(
         [
-            Row(docid="1", text="This is a test sentence."),
-            Row(docid="2", text="This is another test sentence."),
+            Row(docid="1", contents="This is a test sentence."),
+            Row(docid="2", contents="This is another test sentence."),
         ]
     )
 
@@ -37,8 +37,8 @@ def test_process_test_sentence_transformer(spark, temp_parquet, tmp_path):
     spark = get_spark(app_name="pytest")
     transformed = spark.read.parquet(f"{output}/data")
     assert transformed.count() == 2
-    assert transformed.columns == ["docid", "text", "transformed", "sample_id"]
-    row = transformed.select("transformed").first()
-    assert len(row.transformed) == 384
-    assert all(isinstance(x, float) for x in row.transformed)
+    assert transformed.columns == ["docid", "contents", "embedding", "sample_id"]
+    row = transformed.select("embedding").first()
+    assert len(row.embedding) == 384
+    assert all(isinstance(x, float) for x in row.embedding)
     transformed.show()
