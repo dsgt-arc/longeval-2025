@@ -5,6 +5,13 @@ For running on PACE.
 ```bash
 salloc \
     -A paceship-dsgt_clef2025 \
+    -qinferno --gres=gpu:V100:1 -N1 -n1 --cpus-per-task=4 --mem-per-cpu=4G \
+    -t1:00:00
+```
+
+```
+salloc \
+    -A paceship-dsgt_clef2025 \
     -qinferno -N1 -n1 --cpus-per-task=4 --mem-per-cpu=4G \
     -t1:00:00
 ```

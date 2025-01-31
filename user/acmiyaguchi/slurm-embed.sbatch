@@ -21,6 +21,7 @@ source venv/bin/activate
 nproc
 free -h
 python -c "import torch; print(torch.cuda.is_available())"
+nvidia-smi
 
 project_dir=~/p-dsgt_clef2025-0/longeval
 dataset=train/2023_01/English/Documents
