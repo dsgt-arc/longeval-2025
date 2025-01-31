@@ -19,6 +19,7 @@ def df(spark):
     [
         ("all-MiniLM-L6-v2", 384),
         ("answerdotai/ModernBERT-base", 768),
+        ("joe32140/ModernBERT-base-msmarco", 768),
     ],
 )
 def test_wrapped_sentence_transformer(df, model_name, dim):

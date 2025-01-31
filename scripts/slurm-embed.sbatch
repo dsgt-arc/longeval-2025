@@ -2,7 +2,7 @@
 #SBATCH -Jlongeval-embed                        # Job name
 #SBATCH --account=paceship-dsgt_clef2025        # charge account
 #SBATCH -N1 --gres=gpu:V100:1                   # Number of nodes and cores required
-#SBATCH --cpus-per-task=8                       # Number of cores per task
+#SBATCH --cpus-per-task=4                       # Number of cores per task
 #SBATCH --mem-per-gpu=32G                       # Memory per core
 #SBATCH -t120                                   # Duration of the job (Ex: 15 mins)
 #SBATCH --array=0-7%8                           # Array range and max jobs
@@ -26,8 +26,8 @@ export PYSPARK_DRIVER_MEMORY=28g
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 longeval etl embedding \
     $project_dir/parquet/$dataset \
-    $project_dir/embedding/$model_name/$dataset \
+    $project_dir/embedding/${model_name/\//-}/$dataset \
     --model-name $model_name \
-    --cpu-count 8 \
+    --cpu-count 4 \
     --num-sample-ids 8 \
     --sample-id $SLURM_ARRAY_TASK_ID
