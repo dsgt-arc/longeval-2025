@@ -77,11 +77,22 @@ class WrappedSentenceTransformer(
             batchSize=batch_size,
         )
 
+    def _nvidia_smi(self):
+        from subprocess import run
+
+        try:
+            run(["nvidia-smi"], check=True)
+        except Exception:
+            pass
+
     def _make_predict_fn(self):
         """Return PredictBatchFunction using a closure over the model"""
         from sentence_transformers import SentenceTransformer
 
+        # gpu memory before and after configuring the model
+        self._nvidia_smi()
         model = SentenceTransformer(self.getModelName())
+        self._nvidia_smi()
 
         def predict(inputs: np.ndarray) -> np.ndarray:
             return model.encode(inputs)

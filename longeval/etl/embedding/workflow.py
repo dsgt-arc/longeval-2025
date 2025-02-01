@@ -115,6 +115,7 @@ class Workflow(luigi.WrapperTask):
     num_sample_ids = luigi.IntParameter(default=20)
     model_name = luigi.Parameter(default="all-MiniLM-L6-v2")
     cpu_count = luigi.IntParameter(default=8)
+    batch_size = luigi.IntParameter(default=32)
 
     def requires(self):
         # either we run a single task or we run all the tasts
@@ -132,6 +133,7 @@ class Workflow(luigi.WrapperTask):
                 num_sample_ids=self.num_sample_ids,
                 model_name=self.model_name,
                 cpu_count=self.cpu_count,
+                batch_size=self.batch_size,
             )
             tasks.append(task)
         yield tasks
@@ -145,6 +147,7 @@ def main(
     model_name: Annotated[str, typer.Option(help="Model name")] = "all-MiniLM-L6-v2",
     scheduler_host: Annotated[str, typer.Option(help="Scheduler host")] = None,
     cpu_count: Annotated[int, typer.Option(help="Number of CPUs")] = 8,
+    batch_size: Annotated[int, typer.Option(help="Batch size")] = 32,
 ):
     """Count the number of tokens in the collection"""
     kwargs = {}
@@ -162,6 +165,7 @@ def main(
                 num_sample_ids=num_sample_ids,
                 model_name=model_name,
                 cpu_count=cpu_count,
+                batch_size=batch_size,
             )
         ],
         **kwargs,
