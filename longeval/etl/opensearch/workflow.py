@@ -15,7 +15,6 @@ from longeval.spark import spark_resource
 
 from .targets import OpenSearchIndexTarget
 
-
 def update_index_template(opensearch_host, number_of_shards=1):
     client = OpenSearch(opensearch_host)
     client.indices.put_index_template(
@@ -92,7 +91,7 @@ class OpenSearchLoadTask(luigi.Task):
             collection = ParquetCollection(spark, self.input_path)
             with Timer() as timer:
                 (
-                    collection.documents.write.format("opensearch")
+                    collection.documents.write.format("org.opensearch.spark.sql")
                     .option("opensearch.nodes", self.opensearch_host.split(":")[0])
                     .option("opensearch.port", self.opensearch_host.split(":")[1])
                     .option("opensearch.nodes.wan.only", "true")
