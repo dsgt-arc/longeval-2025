@@ -3,20 +3,23 @@
 #SBATCH --account=paceship-dsgt_clef2025        # charge account
 #SBATCH -N1 --gres=gpu:V100:1                   # Number of nodes and cores required
 #SBATCH --cpus-per-task=1                       # Number of cores per task
-#SBATCH --mem-per-gpu=32G                       # Memory per core
+#SBATCH --mem-per-gpu=15G                       # Memory per core
 #SBATCH -t120                                   # Duration of the job (Ex: 15 mins)
 ##SBATCH --array=0-9%10                          # Array range and max jobs
 #SBATCH -qinferno                                # QOS Name
 #SBATCH -oReport-%j.out                         # Combined output and error messages file
-##SBATCH --mail-type=END,FAIL                    # Mail preferences
-##SBATCH --mail-user=acmiyaguchi@gatech.edu      # E-mail address for notifications
+#SBATCH --mail-type=END,FAIL                    # Mail preferences
+#SBATCH --mail-user=acmiyaguchi@gatech.edu      # E-mail address for notifications
 set -xeu
 
 module load python/3.10
 export CPATH=$PYTHON_ROOT/include/python3.10:$CPATH
 
-cd ~/scratch/longeval
-source venv/bin/activate
+pip install uv
+cd $TMPDIR
+uv venv
+source .venv/bin/activate
+uv pip install -e ~/clef/longeval-2025
 
 nproc
 free -h
@@ -28,12 +31,13 @@ dataset=train/2023_01/English/Documents
 # model_name="all-MiniLM-L6-v2"
 model_name="joe32140/ModernBERT-base-msmarco"
 #model_name="answerdotai/ModernBERT-base"
-export PYSPARK_DRIVER_MEMORY=28g
+export PYSPARK_DRIVER_MEMORY=15g
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 longeval etl embedding \
     $project_dir/parquet/$dataset \
-    $project_dir/embedding/${model_name/\//-}/$dataset \
+    ~/scratch/longeval/test/embedding/${model_name/\//-}/$dataset \
     --model-name $model_name \
     --cpu-count 1 \
-    --num-sample-ids 8 \
+    --batch-size 1 \
+    --num-sample-ids 20 \
     --sample-id 0
