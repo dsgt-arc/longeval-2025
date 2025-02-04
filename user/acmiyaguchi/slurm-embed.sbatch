@@ -15,8 +15,11 @@ set -xeu
 module load python/3.10
 export CPATH=$PYTHON_ROOT/include/python3.10:$CPATH
 
-cd ~/scratch/longeval
-source venv/bin/activate
+pip install uv
+cd $TMPDIR
+uv venv
+source .venv/bin/activate
+uv pip install -e ~/clef/longeval-2025
 
 nproc
 free -h
@@ -28,7 +31,7 @@ dataset=train/2023_01/English/Documents
 # model_name="all-MiniLM-L6-v2"
 model_name="joe32140/ModernBERT-base-msmarco"
 #model_name="answerdotai/ModernBERT-base"
-export PYSPARK_DRIVER_MEMORY=28g
+export PYSPARK_DRIVER_MEMORY=15g
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 longeval etl embedding \
     $project_dir/parquet/$dataset \
