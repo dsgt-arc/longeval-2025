@@ -26,7 +26,7 @@ def main(
         cmd = [
             "sbatch",
             f"--job-name=longeval-embed-{model_name}-{path}",
-            f"{Path(__file__).parent}/slurm-embed.sbatch",
+            f"{Path(__file__).parent}/sbatch/slurm-embed.sbatch",
             path.as_posix(),
             model_name,
         ]

@@ -13,7 +13,7 @@
 set -xeu
 
 cd ~/scratch/longeval
-source venv/bin/activate
+source .venv/bin/activate
 
 nproc
 free -h

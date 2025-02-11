@@ -1,5 +1,7 @@
 # acmiyaguchi
 
+## pace experiments
+
 For running on PACE.
 
 ```bash
@@ -44,4 +46,18 @@ The simplest way is to specify a single node with a single task, and to task for
 #SBATCH -N1 -n1             # Number of nodes and tasks
 #SBATCH --cpus-per-task=8   # Number of cores per task
 #SBATCH --mem-per-cpu=4G    # Memory per core
+```
+
+## copying files over to gcp
+
+```bash
+gcloud storage cp -r /storage/home/hcoda1/8/amiyaguchi3/shared/longeval/parquet/ gs://dsgt-longeval-2025/
+gcloud storage cp -r /storage/home/hcoda1/8/amiyaguchi3/shared/longeval/embedding/all-MiniLM-L6-v2/ gs://dsgt-longeval-2025/embedding/
+```
+
+Do it the smarter way and let slurm deal with it since there are a lot of files. Make sure to omit the trailing slash.
+
+```bash
+sbatch gcloud/rsync.sbatch parquet
+sbatch gcloud/rsync.sbatch embedding/all-MiniLM-L6-v2
 ```
