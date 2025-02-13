@@ -168,3 +168,6 @@ data/longeval/opensearch-v1/
 #.idea/
 
 *.out
+*.ndjson
+*.png
+logs/
