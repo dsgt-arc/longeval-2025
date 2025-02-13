@@ -7,8 +7,12 @@ services:
     volumes:
       # mount the data directory to persist the data
       - ${OPENSEARCH_DATA_DIR:-./data/longeval/opensearch-v1}:/usr/share/opensearch/data
+      - $GOOGLE_APPLICATION_CREDENTIALS:/mnt/gcs-key.json
+      - ${OPENSEARCH_SNAPSHOT_DIR:-./data/longeval/openseach-snapshot}:/mnt/snapshots
     environment:
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD?not set}
+      - path.repo=/mnt/snapshots
+      - GOOGLE_APPLICATION_CREDENTIALS=/mnt/gcs-key.json
       - plugins.security.disabled=true
       - discovery.type=single-node
       - bootstrap.memory_lock=true
