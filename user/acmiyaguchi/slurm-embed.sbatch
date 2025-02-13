@@ -1,43 +1,48 @@
 #!/bin/bash
-#SBATCH -Jlongeval-embed                        # Job name
-#SBATCH --account=paceship-dsgt_clef2025        # charge account
-#SBATCH -N1 --gres=gpu:V100:1                   # Number of nodes and cores required
-#SBATCH --cpus-per-task=1                       # Number of cores per task
-#SBATCH --mem-per-gpu=15G                       # Memory per core
-#SBATCH -t120                                   # Duration of the job (Ex: 15 mins)
-##SBATCH --array=0-9%10                          # Array range and max jobs
-#SBATCH -qinferno                                # QOS Name
-#SBATCH -oReport-%j.out                         # Combined output and error messages file
-#SBATCH --mail-type=END,FAIL                    # Mail preferences
-#SBATCH --mail-user=acmiyaguchi@gatech.edu      # E-mail address for notifications
-set -xeu
+#SBATCH --job-name=longeval-embed --account=paceship-dsgt_clef2025
+#SBATCH --nodes=1 --gres=gpu:V100:1 --cpus-per-task=12 --mem-per-gpu=64G
+#SBATCH --qos=inferno -t120     # set qos=ember for free gpu jobs
+#SBATCH --output=Report-%j.out
+##SBATCH --mail-type=END,FAIL --mail-user=acmiyaguchi@gatech.edu
 
-module load python/3.10
-export CPATH=$PYTHON_ROOT/include/python3.10:$CPATH
+# for parallel runs, break into 10 jobs 10 at a time e.g.
+##SBATCH --array=0-9%10
 
-pip install uv
-cd $TMPDIR
-uv venv
-source .venv/bin/activate
-uv pip install -e ~/clef/longeval-2025
+set -eu
+source ~/clef/longeval-2025/scripts/activate
 
+set -x
 nproc
 free -h
 python -c "import torch; print(torch.cuda.is_available())"
 nvidia-smi
 
-project_dir=~/p-dsgt_clef2025-0/longeval
+# start the nvidia monitoring job in the background using slurm job id
+NVIDIA_LOG_FILE=Report-${SLURM_JOB_ID}-nvidia-logs.ndjson
+nvidia-logs monitor $NVIDIA_LOG_FILE &
+nvidia_logs_pid=$!
+
+project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/longeval
 dataset=train/2023_01/English/Documents
-# model_name="all-MiniLM-L6-v2"
-model_name="joe32140/ModernBERT-base-msmarco"
-#model_name="answerdotai/ModernBERT-base"
-export PYSPARK_DRIVER_MEMORY=15g
+model_name="all-MiniLM-L6-v2"
+# model_name="joe32140/ModernBERT-base-msmarco"
+# model_name="answerdotai/ModernBERT-base"
+export PYSPARK_DRIVER_MEMORY=5g
+export PYSPARK_EXECUTOR_MEMORY=5g
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
+
+# NOTE: we always generate a temporary directory for embeddings because
+# this is a testing job and we want to make sure to always write new data.
+# The slurm job id is used to ensure that we don't overwrite data.
 longeval etl embedding \
     $project_dir/parquet/$dataset \
-    ~/scratch/longeval/test/embedding/${model_name/\//-}/$dataset \
+    ~/scratch/longeval/test/embedding/${model_name/\//-}/${SLURM_JOB_ID}/$dataset \
     --model-name $model_name \
-    --cpu-count 1 \
-    --batch-size 1 \
+    --cpu-count 12 \
+    --batch-size 100 \
     --num-sample-ids 20 \
     --sample-id 0
+
+# kill the nvidia monitoring job and then parse the output
+kill $nvidia_logs_pid
+nvidia-logs parse $NVIDIA_LOG_FILE

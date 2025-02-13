@@ -8,7 +8,7 @@ SCRIPT_PARENT_ROOT=$(
 
 # choose the module depending if this being run on slurm or not
 MODULE_PATH=$(dirname $SCRIPT_PARENT_ROOT)
-MODULE_PATH=${SLURM_SUBMIT_DIR:-$MODULE_PATH}
+# MODULE_PATH=${SLURM_SUBMIT_DIR:-$MODULE_PATH}
 # optional argument to specify the venv root
 VENV_PARENT_ROOT=${1:-~/scratch/longeval}
 VENV_PARENT_ROOT=$(realpath $VENV_PARENT_ROOT)
@@ -23,8 +23,10 @@ mkdir -p $VENV_PARENT_ROOT
 pushd $VENV_PARENT_ROOT
 uv venv
 source .venv/bin/activate
-uv pip install -r $MODULE_PATH/requirements.txt
 
-# install the module in editable mode
-uv pip install -e $MODULE_PATH
+# check for NO_REINSTALL flag
+if [[ -z ${NO_REINSTALL:-} ]]; then
+    uv pip install -r $MODULE_PATH/requirements.txt
+    uv pip install -e $MODULE_PATH
+fi
 popd

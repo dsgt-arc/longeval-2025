@@ -170,4 +170,5 @@ data/longeval/opensearch-v1/
 *.out
 *.ndjson
 *.png
+*.csv
 logs/
