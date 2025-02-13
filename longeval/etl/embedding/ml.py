@@ -89,8 +89,7 @@ class WrappedSentenceTransformer(
         """Return PredictBatchFunction using a closure over the model"""
         from sentence_transformers import SentenceTransformer
 
-        # gpu memory before and after configuring the model
-        self._nvidia_smi()
+        # gpu memory after configuring the model
         model = SentenceTransformer(self.getModelName())
         self._nvidia_smi()
 
