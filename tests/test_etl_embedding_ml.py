@@ -1,10 +1,12 @@
 import pytest
 from longeval.etl.embedding.ml import WrappedSentenceTransformer
 from pyspark.sql import Row
+from longeval.spark import get_spark
 
 
 @pytest.fixture
-def df(spark):
+def df():
+    spark = get_spark(cores=4, name="pytest")
     # dataframe with a single text column
     return spark.createDataFrame(
         [
@@ -18,8 +20,9 @@ def df(spark):
     "model_name,dim",
     [
         ("all-MiniLM-L6-v2", 384),
-        ("answerdotai/ModernBERT-base", 768),
-        ("joe32140/ModernBERT-base-msmarco", 768),
+        # ("answerdotai/ModernBERT-base", 768),
+        # ("joe32140/ModernBERT-base-msmarco", 768),
+        ("nomic-ai/modernbert-embed", 768),
     ],
 )
 def test_wrapped_sentence_transformer(df, model_name, dim):
