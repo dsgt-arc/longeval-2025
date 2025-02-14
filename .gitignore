@@ -168,3 +168,5 @@ data/longeval/opensearch-v1/
 #.idea/
 
 *.out
+
+tests/integration/data/

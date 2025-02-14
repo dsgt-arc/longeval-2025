@@ -16,6 +16,9 @@ typer
 contexttimer
 sentence-transformers
 
+# for downloading from google drive
+gdown
+
 # developer tools
 jupyterlab
 ruff
