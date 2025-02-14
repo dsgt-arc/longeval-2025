@@ -43,7 +43,7 @@ class Workflow(luigi.Task):
 
     def run(self):
         tasks = []
-        for collection_root in self._get_collection_roots(f"{self.input_path}/raw"):
+        for collection_root in self._get_collection_roots(f"{self.input_path}"):
             # let's rename a few of the parts before we write this to parquet
             #   raw -> parquet
             parts = list(Path(collection_root).relative_to(self.input_path).parts)

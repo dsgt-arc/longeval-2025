@@ -1,0 +1,32 @@
+#!/usr/bin/env python
+"""Fetch data for integration tests from google drive."""
+
+import gdown
+from pathlib import Path
+from subprocess import run
+
+
+def download_and_unzip(id: str, output: Path):
+    if not output.exists():
+        gdown.download(id=id, output=output.as_posix(), quiet=False)
+    # unzip and overwrite
+    run(["unzip", "-o", output.as_posix(), "-d", output.parent.as_posix()], check=True)
+
+
+def main():
+    root = Path(__file__).parent.parent
+    integration_data = root / "tests" / "integration" / "data"
+    integration_data.mkdir(parents=True, exist_ok=True)
+
+    download_and_unzip(
+        "1c-rE-YFlFmrLIYhdps2beHQLH9S5slNw",
+        integration_data / "train.zip",
+    )
+    download_and_unzip(
+        "14GqMYSb4jDHVbarq1n9_-wrORYgzmI_f",
+        integration_data / "test.zip",
+    )
+
+
+if __name__ == "__main__":
+    main()
