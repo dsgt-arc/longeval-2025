@@ -30,6 +30,7 @@ def xml2json(xml):
 @app.command()
 def monitor(output: str, interval: int = 30, verbose: bool = False):
     """Monitors nvidia-smi and logs to disk."""
+    print(f"logging nvidia-smi to {output} every {interval} seconds")
     while True:
         res = nvidia_smi()
         res = xml2json(res)

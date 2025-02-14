@@ -18,11 +18,19 @@ module load python/3.10
 export CPATH=$PYTHON_ROOT/include/python3.10:$CPATH
 
 # create a virtual environment with uv
+python -m ensurepip
 python -m pip install --upgrade pip uv
 mkdir -p $VENV_PARENT_ROOT
 pushd $VENV_PARENT_ROOT
-uv venv
-source .venv/bin/activate
+
+# check if exists
+if [[ -d .venv ]]; then
+    echo "Virtual environment already exists. Skipping creation."
+    source .venv/bin/activate
+else
+    uv venv
+    source .venv/bin/activate
+fi
 
 # check for NO_REINSTALL flag
 if [[ -z ${NO_REINSTALL:-} ]]; then
