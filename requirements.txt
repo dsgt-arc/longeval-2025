@@ -24,3 +24,4 @@ jupyterlab
 ruff
 pre-commit
 pytest
+xmltodict

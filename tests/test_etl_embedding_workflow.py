@@ -6,7 +6,8 @@ from longeval.spark import get_spark
 
 
 @pytest.fixture
-def df(spark):
+def df():
+    spark = get_spark(cores=4, name="pytest")
     # dataframe with a single text column
     return spark.createDataFrame(
         [
@@ -23,7 +24,7 @@ def temp_parquet(df, tmp_path):
     return path
 
 
-def test_process_test_sentence_transformer(spark, temp_parquet, tmp_path):
+def test_process_test_sentence_transformer(temp_parquet, tmp_path):
     output = tmp_path / "output"
     task = ProcessSentenceTransformer(
         input_path=temp_parquet.as_posix(),

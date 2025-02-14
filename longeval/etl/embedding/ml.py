@@ -6,6 +6,7 @@ from pyspark.ml.param.shared import HasInputCol, HasOutputCol
 from pyspark.ml.util import DefaultParamsReadable, DefaultParamsWritable
 from pyspark.sql import DataFrame
 from pyspark.sql.types import ArrayType, FloatType
+from pyspark.sql import functions as F
 
 
 class HasModelName(Param):
@@ -89,8 +90,7 @@ class WrappedSentenceTransformer(
         """Return PredictBatchFunction using a closure over the model"""
         from sentence_transformers import SentenceTransformer
 
-        # gpu memory before and after configuring the model
-        self._nvidia_smi()
+        # gpu memory after configuring the model
         model = SentenceTransformer(self.getModelName())
         self._nvidia_smi()
 
@@ -100,11 +100,21 @@ class WrappedSentenceTransformer(
         return predict
 
     def _transform(self, df: DataFrame):
-        return df.withColumn(
-            self.getOutputCol(),
-            predict_batch_udf(
-                make_predict_fn=self._make_predict_fn,
-                return_type=ArrayType(FloatType()),
-                batch_size=self.getBatchSize(),
-            )(self.getInputCol()),
+        return (
+            df.withColumn(
+                "_input",
+                # nomic-ai models expect a pre-task prefix
+                F.concat(F.lit("search_document: "), F.col(self.getInputCol()))
+                if self.getModelName().startswith("nomic-ai")
+                else F.col(self.getInputCol()),
+            )
+            .withColumn(
+                self.getOutputCol(),
+                predict_batch_udf(
+                    make_predict_fn=self._make_predict_fn,
+                    return_type=ArrayType(FloatType()),
+                    batch_size=self.getBatchSize(),
+                )(F.col("_input")),
+            )
+            .drop("_input")
         )
