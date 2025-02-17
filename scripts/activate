@@ -6,10 +6,8 @@
 # Run with:
 #    source scripts/activate
 #
-
-SCRIPT_PARENT_ROOT=$(
-    dirname ${BASH_SOURCE[0]} | realpath $(cat -)
-)
+# don't use bash_source since it gets called from other scripts
+SCRIPT_PARENT_ROOT=$(dirname $(realpath ${BASH_SOURCE[0]}))
 
 # adds the scripts directory to the path
 PATH="$PATH:$SCRIPT_PARENT_ROOT"

@@ -19,13 +19,14 @@ nproc
 free -h
 python -c "import torch; print(torch.cuda.is_available())"
 
-project_dir=~/p-dsgt_clef2025-0/longeval
+project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/longeval
+scratch_dir=$(realpath ~/scratch/longeval)
 dataset=$1
 model_name=$2
 export PYSPARK_DRIVER_MEMORY=28g
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 longeval etl embedding \
-    $project_dir/parquet/$dataset \
+    $scratch_dir/parquet/$dataset \
     $project_dir/embedding/${model_name/\//-}/$dataset \
     --model-name $model_name \
     --cpu-count 4 \

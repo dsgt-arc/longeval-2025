@@ -34,7 +34,6 @@ fi
 
 # check for NO_REINSTALL flag
 if [[ -z ${NO_REINSTALL:-} ]]; then
-    uv pip install -r $MODULE_PATH/requirements.txt
     uv pip install -e $MODULE_PATH
 fi
 popd
