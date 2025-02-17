@@ -2,7 +2,7 @@
 from enum import Enum
 from pathlib import Path
 from subprocess import run
-
+import os
 import typer
 from typing_extensions import Annotated
 
@@ -33,7 +33,8 @@ def main(
         if model_name in ["all-MiniLM-L6-v2"]
         else "sbatch/slurm-embed-large.sbatch"
     )
-    root = Path("/storage/coda1/p-dsgt_clef2025/0/shared/longeval/parquet")
+    home = Path(os.environ["HOME"])
+    root = home / "shared/longeval/parquet"
     paths = sorted(
         [
             path.relative_to(root)
