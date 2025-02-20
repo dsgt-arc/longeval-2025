@@ -1,7 +1,7 @@
 [project]
 name = "longeval"
 version = "0.1.1"
-authors = [{ name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" }]
+authors = [{ name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" }, {name = "Imran Afrulbasha", email = "iafrulbasha3@gatech.edu" }]
 description = "DS@GT LongEval helper package"
 readme = "README.md"
 requires-python = ">=3.8"
