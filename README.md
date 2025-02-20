@@ -34,7 +34,7 @@ brew install maven
 pip install -e .
 mvn clean install
 # install pyspark connectors
-./scripts/spark-jars.sh
+./scripts/utils/spark-jars.sh
 ```
 
 4. Ensure that you have all the environment variables in `.env.template` populated and run `source ~/.bash_profile` if using that as well. 
