@@ -15,11 +15,14 @@ VENV_PARENT_ROOT=$(realpath $VENV_PARENT_ROOT)
 
 # use an updated version of python and set the include path for wheels
 module load python/3.10
+PYTHON_ROOT=$(python -c 'import sys; print(sys.base_prefix)')
 export CPATH=$PYTHON_ROOT/include/python3.10:$CPATH
 
 # create a virtual environment with uv
-python -m ensurepip
-python -m pip install --upgrade pip uv
+if ! command -v uv &> /dev/null; then
+    python -m ensurepip
+    pip install --upgrade pip uv
+fi
 mkdir -p $VENV_PARENT_ROOT
 pushd $VENV_PARENT_ROOT
 

@@ -46,7 +46,7 @@ def main(
         cmd = [
             "sbatch",
             f"--job-name=longeval-embed-{model_name}-{path}",
-            f"{Path(__file__).parent}/{sbatch_script}",
+            f"{Path(__file__).parent.parent}/{sbatch_script}",
             path.as_posix(),
             model_name,
         ]
