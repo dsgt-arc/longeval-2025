@@ -4,6 +4,7 @@ services:
     image: opensearchproject/opensearch:2.18.0
     ports:
       - 9200:9200
+    user: "1000:1000" # Run as opensearch user
     volumes:
       # mount the data directory to persist the data
       - ${OPENSEARCH_DATA_DIR:-$HOME/scratch/longeval/opensearch/data}:/usr/share/opensearch/data
@@ -19,6 +20,11 @@ services:
       - knn.memory.circuit_breaker.limit=256mb
       # no replicas for single-node setup
       - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx16g
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9200/_cluster/health?wait_for_status=green&timeout=60s" ]
+      interval: 15s
+      timeout: 60s
+      retries: 5
     ulimits:
       # Set memlock to unlimited (no soft or hard limit)
       memlock:
@@ -30,7 +36,7 @@ services:
         hard: 65536
   # add the opensearch ui too
   opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:latest
+    image: opensearchproject/opensearch-dashboards:2.18.0
     ports:
       - 5601:5601
     environment:
@@ -38,4 +44,5 @@ services:
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
     depends_on:
-      - opensearch
+      opensearch:
+        condition: service_healthy

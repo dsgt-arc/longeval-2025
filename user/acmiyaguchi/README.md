@@ -61,3 +61,14 @@ Do it the smarter way and let slurm deal with it since there are a lot of files.
 sbatch gcloud/rsync.sbatch parquet
 sbatch gcloud/rsync.sbatch embedding/all-MiniLM-L6-v2
 ```
+
+## copying files from gcp to the vm
+
+We've set up the vm so that we have local scratch disk setup at `$HOME/scratch`.
+Run the following commands:
+
+```bash
+./scripts/activate-gcp-vm
+gcloud storage rsync -r gs://dsgt-longeval-2025/parquet/ ~/scratch/longeval/parquet/
+gcloud storage rsync -r gs://dsgt-longeval-2025/embedding/ ~/scratch/longeval/embedding/
+```

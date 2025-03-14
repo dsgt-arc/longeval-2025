@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -ex
+
+# set up the scratch disk for the GCP VM
+# check if ~/scratch exists, if not link it to /mnt/data
+scratch=$(realpath ~/scratch)
+if [ ! -d $scratch ]; then
+    echo "Linking ~/scratch to /mnt/data"
+    ln -s /mnt/data $scratch
+else
+    echo "$scratch already exists"
+fi
+
+# now create some of the temporary directories
+mkdir -p $scratch/longeval/opensearch/{data,snapshots}
+sudo chmod 777 $scratch/longeval/opensearch/{data,snapshots}
