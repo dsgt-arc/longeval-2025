@@ -5,7 +5,35 @@ authors = [{ name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" }]
 description = "DS@GT LongEval helper package"
 readme = "README.md"
 requires-python = ">=3.8"
-dynamic = ["dependencies"]
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "tqdm",
+    "unidecode",
+    "pyspark>=3.4.0",
+    "pyarrow",
+    "scikit-learn",
+    "luigi",
+    "google-api-python-client",
+    "google-auth",
+    "google-cloud-storage",
+    "opensearch-py",
+    "tiktoken",
+    "typer",
+    "contexttimer",
+    "sentence-transformers",
+    "gdown",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyterlab",
+    "ruff",
+    "pre-commit",
+    "pytest",
+    "pace-job-monitoring@git+https://github.com/dsgt-kaggle-clef/pace-job-monitoring.git#main"
+]
 
 [project.urls]
 Homepage = "https://github.com/dsgt-kaggle-clef/longeval-2025"
@@ -18,13 +46,7 @@ longeval = "longeval.cli:app"
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.dynamic]
-dependencies = { file = "requirements.txt" }
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["longeval*"]
 namespaces = false
-
-[tool.uv]
-cache-dir = "~/scratch/uv-cache"
