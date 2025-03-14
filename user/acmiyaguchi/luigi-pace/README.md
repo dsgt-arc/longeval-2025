@@ -136,4 +136,4 @@ We might use this for basic computation that we know can be done on a single nod
 A centralized scheduler might have its use cases, but the scripting logic is a bit convoluted.
 The use of slurm array creates a job per subtask, and this is likely the best way to handle a preemptible job. Since our jobs are going to be broken up into chunks anyways, we can simply have a job per chunk and let the slurm scheduler batch things up in a way that we can walk away.
 
-One of the things that I would like more information about is whether pre-empted jobs are retried or not, but luigi handles some degree of idemopotency for us.
+One of the things that I would like more information about is whether preempted jobs are retried or not, but luigi handles some degree of idemopotency for us.

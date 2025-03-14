@@ -25,7 +25,7 @@ OPENSEARCH_SNAPSHOT_DIR=
 OPENSEARCH_DATA_DIR=
 # Below is optional if you want to leverage repository-gcs plugin
 # https://forum.opensearch.org/t/plugin-repository-gcs-not-working-for-snapshots/11126
-GOOGLE_APPLICATION_CREDENTIALS= 
+GOOGLE_APPLICATION_CREDENTIALS=
 ```
 3. Run the following commands to prep permissions / docker
 ```bash
@@ -42,7 +42,7 @@ newgrp docker
 
 6. Run `docker compose up` and also ``curl -X GET "http://localhost:9200/_cluster/health?pretty"``. Ensure the value for path.repo looks correct as specified in the docker-compose file
 
-7. After running the luigi worflows and creating the dat files in the `$OPENSEARCH_SNAPSHOT_DIR` directory, you can proceed with transferring them to the appropriate GCP bucket folder. You can run a command akin to `gsutil cp /home/ikafrulbasha/opensearch-snapshots/snap--OrUwZR6SceWJ1IcqkqV8Q.dat gs://dsgt-longeval-2025/opensearch-snapshots/`
+7. After running the luigi workflows and creating the data files in the `$OPENSEARCH_SNAPSHOT_DIR` directory, you can proceed with transferring them to the appropriate GCP bucket folder. You can run a command akin to `gsutil cp /home/ikafrulbasha/opensearch-snapshots/snap--OrUwZR6SceWJ1IcqkqV8Q.dat gs://dsgt-longeval-2025/opensearch-snapshots/`
 ---
 
 #### Health Check Snapshot Creation
@@ -143,11 +143,11 @@ dsgt-longeval-2025
      │        │── snap-UUID1.dat  <-- Data file for Snapshot-1
      │        │── snap-UUID2.dat  <-- Data file for Snapshot-2
      |
-    ... 
+    ...
 ```
 
 ---
-Once your snapshot mount directory is stored locally in the VM instance (transferred from the appropriate GCP bucket folder) you may register the repository at the download loacation
+Once your snapshot mount directory is stored locally in the VM instance (transferred from the appropriate GCP bucket folder) you may register the repository at the download location
 ```json
 curl -X PUT "http://localhost:9200/_snapshot/dev-test-snapshot" -H 'Content-Type: application/json' -d'
 {
@@ -162,7 +162,7 @@ You may restore a specific index like so
 ```json
 curl -X POST "http://localhost:9200/_snapshot/dev-test-snapshot/my-snapshot/_restore" -H 'Content-Type: application/json' -d'
 {
-  "indices": "my-index", 
+  "indices": "my-index",
   "ignore_unavailable": true,
   "include_global_state": false
 }'
@@ -174,4 +174,3 @@ curl -X GET "http://localhost:9200/_cat/recovery?v"
 ```
 
 After these steps, a user may proceed with running Opensearch experiments
-

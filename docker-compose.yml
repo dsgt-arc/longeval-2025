@@ -39,4 +39,3 @@ services:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
     depends_on:
       - opensearch
-
