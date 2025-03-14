@@ -11,4 +11,3 @@ app.command("parquet")(parquet_main)
 app.command("tokens")(tokens_main)
 app.command("embedding")(embedding_main)
 app.command("opensearch")(opensearch_main)
-

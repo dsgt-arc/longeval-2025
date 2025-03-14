@@ -37,7 +37,7 @@ mvn clean install
 ./scripts/utils/spark-jars.sh
 ```
 
-4. Ensure that you have all the environment variables in `.env.template` populated and run `source ~/.bash_profile` if using that as well. 
+4. Ensure that you have all the environment variables in `.env.template` populated and run `source ~/.bash_profile` if using that as well.
 - For the password variable, you can check the strength of your password [at this website](https://lowe.github.io/tryzxcvbn/).
 - You can populate the `SPARK_JARS` environment variable with the directory where the `opensearch-spark-30_2.12` library lives
 - For the `SPARK_HOME` environment variable, it can be pointed to the path of the manually downloaded **spark-3.5.4 version without hadoop**. Downloads can be found [here](https://apache.root.lu/spark/spark-3.2.4/).
@@ -51,7 +51,7 @@ source test_env/bin/activate
 
 ---
 
-### GCP Development Workflow 
+### GCP Development Workflow
 
 1. Download the appropriate SDK for your operating system [here](https://cloud.google.com/sdk/docs/install-sdk)
 2. Update your PATH env var & shell
@@ -66,8 +66,8 @@ source test_env/bin/activate
     - `gcloud compute instances start dsgt-longeval-2025`
     - `gcloud compute instances stop dsgt-longeval-2025 --discard-local-ssd=true`
 7. Run `gcloud compute config-ssh` to generate a ssh-key
-8. Open your `~/.ssh/config` file and take note of server details. Ensure the Hostname matches the external IP address of the VM instance. 
-9. If running into connection issues, try checking your firewall  settings on GCP. 
+8. Open your `~/.ssh/config` file and take note of server details. Ensure the Hostname matches the external IP address of the VM instance.
+9. If running into connection issues, try checking your firewall  settings on GCP.
     - Navigate from `VPC Network` --> `Firewall`
         - Name --> `ssh-allow`
         - Targets --> `All instances in the network`
@@ -78,9 +78,9 @@ source test_env/bin/activate
 
 ---
 
-### LongEval Workflow  
+### LongEval Workflow
 
-1. Ensure you have a LongEval file directory that models a topology similiar to the one below
+1. Ensure you have a LongEval file directory that models a topology similar to the one below
 
 ```
 LongEvalTrainCollection
@@ -97,7 +97,7 @@ LongEvalTrainCollection
         │     │     └─── train.txt
         │     └── Queries
         │           └─── train.tsv
-        │       
+        │
         └── French
                 ├── Documents
                 │       └── Json
@@ -119,7 +119,7 @@ LongEvalTrainCollection
 GET _cat/indices?v=true
 ```
 - The above etl commands should yield an index named `devlongevaltraincollection-test-parquet`
-- To view the number of entries under that undex you may run 
+- To view the number of entries under that undex you may run
 
 ```
 GET devlongevaltraincollection-test-parquet/_count
@@ -127,7 +127,7 @@ GET devlongevaltraincollection-test-parquet/_count
 
 ---
 
-### Creating New LongEval Commands 
+### Creating New LongEval Commands
 
 - To run an existing longeval command, you may look at the `__init__.py` file under the `/etl` directory to see the possible options to run
     - If you'd like to run a parquet transformation task for your Documents, Queries, and Qrels, you can run `! longeval etl parquet` in the terminal
@@ -136,4 +136,3 @@ GET devlongevaltraincollection-test-parquet/_count
     - Add an empty `__init__.py` file under your new folder
     - Create a `workflow.py` for your new task
     - Update the `__init__.py` directly under the `/etl` directory
-

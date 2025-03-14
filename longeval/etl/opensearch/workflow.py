@@ -15,6 +15,7 @@ from longeval.spark import spark_resource
 
 from .targets import OpenSearchIndexTarget
 
+
 def update_index_template(opensearch_host, number_of_shards=1):
     client = OpenSearch(opensearch_host)
     client.indices.put_index_template(
