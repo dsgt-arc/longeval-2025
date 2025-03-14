@@ -11,7 +11,7 @@ import json
 
 from longeval.collection import ParquetCollection
 from longeval.etl.parquet.workflow import Workflow as ParquetWorkflow
-from longeval.spark import spark_resource
+from longeval.spark import get_spark
 
 from .targets import OpenSearchIndexTarget
 
@@ -88,34 +88,34 @@ class OpenSearchLoadTask(luigi.Task):
             client.indices.delete(index=index_name)
             client.indices.refresh()
 
-        with spark_resource() as spark:
-            collection = ParquetCollection(spark, self.input_path)
-            with Timer() as timer:
-                (
-                    collection.documents.write.format("org.opensearch.spark.sql")
-                    .option("opensearch.nodes", self.opensearch_host.split(":")[0])
-                    .option("opensearch.port", self.opensearch_host.split(":")[1])
-                    .option("opensearch.nodes.wan.only", "true")
-                    .mode("overwrite")
-                    .save(index_name)
-                )
+        spark = get_spark()
+        collection = ParquetCollection(spark, self.input_path)
+        with Timer() as timer:
+            (
+                collection.documents.write.format("org.opensearch.spark.sql")
+                .option("opensearch.nodes", self.opensearch_host.split(":")[0])
+                .option("opensearch.port", self.opensearch_host.split(":")[1])
+                .option("opensearch.nodes.wan.only", "true")
+                .mode("overwrite")
+                .save(index_name)
+            )
 
-            timing_path = self._timing_path()
-            timing_path.parent.mkdir(parents=True, exist_ok=True)
-            with timing_path.open("w") as fp:
-                json.dump(
-                    {
-                        "time": timer.elapsed,
-                        "rows": collection.documents.count(),
-                        "src": self.input_path,
-                        "index": index_name,
-                    },
-                    fp,
-                )
+        timing_path = self._timing_path()
+        timing_path.parent.mkdir(parents=True, exist_ok=True)
+        with timing_path.open("w") as fp:
+            json.dump(
+                {
+                    "time": timer.elapsed,
+                    "rows": collection.documents.count(),
+                    "src": self.input_path,
+                    "index": index_name,
+                },
+                fp,
+            )
 
 
 class Workflow(luigi.Task):
-    root = luigi.Parameter(default="/mnt/data/longeval")
+    root = luigi.Parameter(default=f"{Path('~').expanduser()}/scratch/longeval")
     opensearch_host = luigi.Parameter(default="localhost:9200")
 
     def dependencies(self):
