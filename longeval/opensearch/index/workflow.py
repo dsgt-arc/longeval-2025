@@ -1,4 +1,9 @@
-"""Load documents into opensearch for indexing."""
+"""
+OpenSearch indexing workflow for Longeval.
+
+This module defines Luigi tasks and workflows for loading document collections
+into OpenSearch and configuring appropriate index settings.
+"""
 
 from pathlib import Path
 
@@ -17,6 +22,13 @@ from .targets import OpenSearchIndexTarget
 
 
 def update_index_template(opensearch_host, number_of_shards=1):
+    """
+    Create or update OpenSearch index template.
+
+    This function configures a default index template for longeval collections,
+    setting up appropriate mappings for document fields and optimizing
+    index settings.
+    """
     client = OpenSearch(opensearch_host)
     client.indices.put_index_template(
         name="longeval_default",
@@ -48,12 +60,23 @@ def update_index_template(opensearch_host, number_of_shards=1):
 
 
 class OpenSearchLoadTask(luigi.Task):
-    """Load documents into opensearch."""
+    """
+    Luigi task to load documents from a Parquet collection into OpenSearch.
+
+    This task handles index name generation, index creation with proper settings,
+    and loading documents from Parquet into OpenSearch using Spark.
+    """
 
     input_path = luigi.Parameter()
     opensearch_host = luigi.Parameter()
 
     def _index_name(self):
+        """
+        Generate OpenSearch index name from collection metadata.
+
+        Creates an index name using the split, language, and date from the collection
+        metadata, following the format: split-language-date.
+        """
         collection = ParquetCollection(None, self.input_path)
         metadata = collection.metadata
         split, date, language = (
@@ -61,9 +84,15 @@ class OpenSearchLoadTask(luigi.Task):
             metadata["date"],
             metadata["language"],
         )
+        # example: train-english-2023_01
         return f"{split}-{language}-{date}".lower()
 
     def _timing_path(self):
+        """
+        Generate path for timing information output file.
+
+        Creates a file path to store timing information about the indexing process.
+        """
         return (
             Path(
                 Path(self.input_path)
@@ -74,12 +103,27 @@ class OpenSearchLoadTask(luigi.Task):
         )
 
     def output(self):
+        """
+        Define task outputs: OpenSearch index and timing information file.
+
+        The task produces both an OpenSearch index target and a local file
+        containing timing information.
+        """
         return [
             OpenSearchIndexTarget(self._index_name(), host=self.opensearch_host),
             luigi.LocalTarget(self._timing_path().as_posix()),
         ]
 
     def run(self):
+        """
+        Execute the document loading process.
+
+        This method:
+        1. Updates the index template
+        2. Deletes the index if it already exists
+        3. Loads documents from Parquet into OpenSearch using Spark
+        4. Records timing information about the process
+        """
         update_index_template(self.opensearch_host)
         # delete the index if it exists
         client = OpenSearch(self.opensearch_host)
@@ -115,13 +159,27 @@ class OpenSearchLoadTask(luigi.Task):
 
 
 class Workflow(luigi.Task):
+    """
+    Main Luigi workflow for loading all collections into OpenSearch.
+
+    This workflow identifies all document collections in the system and
+    triggers OpenSearchLoadTask for each one.
+    """
+
     root = luigi.Parameter(default=f"{Path('~').expanduser()}/scratch/longeval")
     opensearch_host = luigi.Parameter(default="localhost:9200")
 
     def dependencies(self):
+        """Define workflow dependencies - requires Parquet workflow to complete first."""
         return [ParquetWorkflow(root=self.root)]
 
     def _get_collection_roots(self, root):
+        """
+        Locate all document collections in the system.
+
+        Identifies directories that contain both Documents and Queries subdirectories,
+        which represent complete document collections.
+        """
         # look for all directories that have Documents and Queries as subdirectories
         return [
             path
@@ -129,7 +187,12 @@ class Workflow(luigi.Task):
             if (path / "Documents").exists() and (path / "Queries").exists()
         ]
 
-    def run(self):
+    def requires(self):
+        """
+        Generate OpenSearchLoadTask instances for each collection.
+
+        Scans the parquet directory for collections and creates a load task for each one.
+        """
         tasks = []
         parquet_root = Path(self.root) / "parquet"
         for collection_root in self._get_collection_roots(parquet_root):
@@ -148,7 +211,12 @@ def main(
     ] = "localhost:9200",
     scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
-    """Load documents into opensearch for indexing."""
+    """
+    Command-line entry point for the OpenSearch indexing workflow.
+
+    Executes the Luigi workflow to load documents into OpenSearch,
+    optionally connecting to a remote scheduler.
+    """
     kwargs = {}
     if scheduler_host:
         kwargs["scheduler_host"] = scheduler_host
