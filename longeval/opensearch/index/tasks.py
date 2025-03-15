@@ -4,6 +4,7 @@ import luigi
 from opensearchpy import OpenSearch
 from contexttimer import Timer
 import json
+from functools import cache
 
 from longeval.collection import ParquetCollection
 from longeval.spark import get_spark
@@ -56,6 +57,7 @@ class OpenSearchLoadTask(luigi.Task):
     """
 
     input_path = luigi.Parameter()
+    overwrite = luigi.BoolParameter(default=False)
     opensearch_host = luigi.Parameter()
 
     def _index_name(self):
@@ -83,10 +85,23 @@ class OpenSearchLoadTask(luigi.Task):
 
     def output(self):
         """Define task outputs: OpenSearch index and timing information file."""
-        return [
-            OpenSearchIndexTarget(self._index_name(), host=self.opensearch_host),
-            luigi.LocalTarget(self._timing_path().as_posix()),
-        ]
+        return (
+            [
+                OpenSearchIndexTarget(
+                    self._index_name(),
+                    count=self._collection().documents.count(),
+                    host=self.opensearch_host,
+                )
+            ]
+            if not self.overwrite
+            else [],
+        )
+
+    @cache
+    def _collection(self):
+        """Return the collection associated with this task."""
+        spark = get_spark()
+        return ParquetCollection(spark, self.input_path)
 
     def run(self):
         """
@@ -106,14 +121,15 @@ class OpenSearchLoadTask(luigi.Task):
             client.indices.delete(index=index_name)
             client.indices.refresh()
 
-        spark = get_spark()
-        collection = ParquetCollection(spark, self.input_path)
+        collection = self._collection()
+
         with Timer() as timer:
             (
                 collection.documents.write.format("org.opensearch.spark.sql")
                 .option("opensearch.nodes", self.opensearch_host.split(":")[0])
                 .option("opensearch.port", self.opensearch_host.split(":")[1])
                 .option("opensearch.nodes.wan.only", "true")
+                .option("opensearch.mapping.id", "docid")
                 .mode("overwrite")
                 .save(index_name)
             )

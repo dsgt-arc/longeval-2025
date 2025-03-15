@@ -17,14 +17,23 @@ class OpenSearchIndexTarget(luigi.Target):
     connected OpenSearch instance.
     """
 
-    def __init__(self, index, host="localhost:9200"):
+    def __init__(self, index, count: int | None = None, host="localhost:9200"):
         self.host = host
         self.client = OpenSearch(host)
+        self.count = count
         self.index = index
 
     def exists(self):
         """Check if the target index exists in OpenSearch."""
-        return self.client.indices.exists(index=self.index)
+        if not self.client.indices.exists(index=self.index):
+            return False
+
+        if self.count is None:
+            return True
+
+        # Check if the index has the expected number of documents
+        response = self.client.count(index=self.index)
+        return response.get("count") == self.count
 
 
 class OpenSearchIndexTemplateTarget(luigi.Target):

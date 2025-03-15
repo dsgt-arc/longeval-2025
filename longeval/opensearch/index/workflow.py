@@ -24,6 +24,9 @@ class Workflow(luigi.Task):
     """
 
     root = luigi.Parameter()
+    overwrite = luigi.BoolParameter(
+        default=False, description="Overwrite existing index"
+    )
     opensearch_host = luigi.Parameter(default="localhost:9200")
 
     def dependencies(self):
@@ -47,6 +50,7 @@ class Workflow(luigi.Task):
             tasks.append(
                 OpenSearchLoadTask(
                     input_path=collection_root.as_posix(),
+                    overwrite=self.overwrite,
                     opensearch_host=self.opensearch_host,
                 )
             )
@@ -57,11 +61,20 @@ def main(
     input_path: Annotated[
         str, typer.Argument(help="Path to the collection root")
     ] = SCRATCH_PATH,
-    opensearch_host: str = "localhost:9200",
+    overwrite: Annotated[bool, typer.Option(help="Overwrite existing index")] = False,
+    opensearch_host: Annotated[
+        str, typer.Option(help="OpenSearch host address")
+    ] = "localhost:9200",
     scheduler_host: Annotated[str, typer.Option(help="Scheduler host")] = None,
 ):
     """Command-line entry point for the OpenSearch indexing workflow."""
     luigi.build(
-        [Workflow(root=input_path, opensearch_host=opensearch_host)],
+        [
+            Workflow(
+                root=input_path,
+                overwrite=overwrite,
+                opensearch_host=opensearch_host,
+            )
+        ],
         **luigi_kwargs(scheduler_host),
     )
