@@ -4,15 +4,14 @@ version = "0.1.1"
 authors = [{ name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" }]
 description = "DS@GT LongEval helper package"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
-    "numpy",
+    "numpy>1.24.4",
     "pandas",
     "matplotlib",
     "tqdm",
     "unidecode",
-    "pyspark==3.5.1",
-    "pyarrow",
+    "pyspark[sql]>=3.5.0",
     "scikit-learn",
     "luigi",
     "google-api-python-client",

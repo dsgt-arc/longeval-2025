@@ -70,7 +70,7 @@ class SummarizeTokenTask(luigi.Task):
 
     def run(self):
         spark = get_spark()
-        df = spark.read.parquet(f"{self.input_path}/*/*/*").cache()
+        df = spark.read.parquet(f"{self.input_path}/*/*/*")
         # make sure output path exists
         Path(self.output_path).mkdir(parents=True, exist_ok=True)
         stats = (
