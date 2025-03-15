@@ -33,10 +33,11 @@ def register_repository(client: OpenSearch, repo_name: str, repo_path: str) -> b
         return False
 
 
-@app.command("snapshot")
-def snapshot(
-    repo_name: str,
-    snapshot_name: str,
+@app.command("create")
+def create(
+    # Generate snapshot name with timestamp if not provided
+    snapshot_name: str = f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+    repo_name: str = "default",
     indices: str = "*",
     host: str = "localhost:9200",
     repo_path: str = "/var/opensearch/snapshots",
@@ -46,10 +47,6 @@ def snapshot(
     client = OpenSearch(host)
     if not register_repository(client, repo_name, repo_path):
         raise Exception(f"Failed to register repository {repo_name}")
-
-    # Generate snapshot name with timestamp if not provided
-    if snapshot_name is None:
-        snapshot_name = f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     logging.info(f"Creating snapshot {snapshot_name} in repository {repo_name}")
     response = client.snapshot.create(
@@ -69,8 +66,8 @@ def snapshot(
 
 @app.command("restore")
 def restore(
-    repo_name: str,
     snapshot_name: str,
+    repo_name: str = "default",
     indices: str = "*",
     repo_path: str = "/var/opensearch/snapshots",
     host: str = "localhost:9200",
@@ -96,7 +93,3 @@ def restore(
 
     logging.info(f"Snapshot {snapshot_name} restored successfully")
     return response
-
-
-if __name__ == "__main__":
-    typer.run(snapshot)

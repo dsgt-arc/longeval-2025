@@ -174,3 +174,4 @@ data/longeval/opensearch-v1/
 logs/
 tests/integration/
 *.tar.gz
+.data
