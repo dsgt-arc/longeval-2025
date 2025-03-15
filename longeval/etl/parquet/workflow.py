@@ -2,10 +2,12 @@
 
 import luigi
 from longeval.collection import RawCollection
-from longeval.spark import spark_resource
+from longeval.spark import get_spark
 from pathlib import Path
 import typer
 from typing_extensions import Annotated
+from longeval.luigi import luigi_kwargs
+from longeval.settings import SCRATCH_PATH
 
 
 class ParquetCollectionTask(luigi.Task):
@@ -24,14 +26,14 @@ class ParquetCollectionTask(luigi.Task):
         )
 
     def run(self):
-        with spark_resource() as spark:
-            collection = RawCollection(spark, self.input_path)
-            collection.to_parquet(self.output_path)
+        spark = get_spark()
+        collection = RawCollection(spark, self.input_path)
+        collection.to_parquet(self.output_path)
 
 
 class Workflow(luigi.Task):
-    input_path = luigi.Parameter(default="/mnt/data/longeval")
-    output_path = luigi.Parameter(default="/mnt/data/longeval")
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
 
     def _get_collection_roots(self, root):
         # look for all directories that have Documents and Queries as subdirectories
@@ -52,30 +54,22 @@ class Workflow(luigi.Task):
             output_path = Path(self.output_path, *parts)
             tasks.append(
                 ParquetCollectionTask(
-                    input_path=collection_root,
-                    output_path=output_path,
+                    input_path=collection_root.as_posix(),
+                    output_path=output_path.as_posix(),
                 )
             )
         yield tasks
 
 
-def main(
+def to_parquet(
     input_path: Annotated[
         str, typer.Argument(help="Input root directory")
-    ] = "/mnt/data/longeval",
-    output_path: Annotated[
-        str, typer.Argument(help="Output root directory")
-    ] = "/mnt/data/longeval",
-    scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
+    ] = SCRATCH_PATH,
+    output_path: Annotated[str, typer.Option(help="Output root directory")] = None,
+    scheduler_host: Annotated[str, typer.Option(help="Scheduler host")] = None,
 ):
     """Convert raw data to parquet"""
-    kwargs = {}
-    if scheduler_host:
-        kwargs["scheduler_host"] = scheduler_host
-    else:
-        kwargs["local_scheduler"] = True
-
     luigi.build(
-        [Workflow(input_path=input_path, output_path=output_path)],
-        **kwargs,
+        [Workflow(input_path=input_path, output_path=output_path or input_path)],
+        **luigi_kwargs(scheduler_host),
     )
