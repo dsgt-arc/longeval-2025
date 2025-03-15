@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pip",
     "jupyterlab",
     "ruff",
     "pre-commit",
