@@ -13,6 +13,6 @@ fi
 
 # now create some of the temporary directories
 mkdir -p $scratch/longeval/opensearch/{data,snapshots}
-sudo chmod 777 $scratch/longeval/opensearch/{data,snapshots}
+sudo chmod 777 -R $scratch/longeval
 
 docker compose "$@"

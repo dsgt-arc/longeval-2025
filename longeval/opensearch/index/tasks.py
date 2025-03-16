@@ -21,9 +21,9 @@ def update_index_template(opensearch_host, number_of_shards=1):
     """
     client = OpenSearch(opensearch_host)
     client.indices.put_index_template(
-        name="longeval_default",
+        name="longeval-default",
         body={
-            "index_patterns": ["test-*", "train-*"],
+            "index_patterns": ["longeval-*"],
             "priority": 10,
             "template": {
                 "settings": {
@@ -57,6 +57,7 @@ class OpenSearchLoadTask(luigi.Task):
     """
 
     input_path = luigi.Parameter()
+    index_prefix = luigi.Parameter(default="longeval")
     overwrite = luigi.BoolParameter(default=False)
     opensearch_host = luigi.Parameter()
 
@@ -70,7 +71,10 @@ class OpenSearchLoadTask(luigi.Task):
             metadata["language"],
         )
         # example: train-english-2023_01
-        return f"{split}-{language}-{date}".lower()
+        name = f"{split}-{language}-{date}"
+        if self.index_prefix:
+            name = f"{self.index_prefix}-{name}"
+        return name.lower()
 
     def _timing_path(self):
         """Generate path for timing information output file."""

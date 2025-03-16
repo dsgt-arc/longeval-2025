@@ -24,6 +24,7 @@ class Workflow(luigi.Task):
     """
 
     root = luigi.Parameter()
+    index_prefix = luigi.Parameter()
     overwrite = luigi.BoolParameter(
         default=False, description="Overwrite existing index"
     )
@@ -50,6 +51,7 @@ class Workflow(luigi.Task):
             tasks.append(
                 OpenSearchLoadTask(
                     input_path=collection_root.as_posix(),
+                    index_prefix=self.index_prefix,
                     overwrite=self.overwrite,
                     opensearch_host=self.opensearch_host,
                 )
@@ -61,6 +63,9 @@ def main(
     input_path: Annotated[
         str, typer.Argument(help="Path to the collection root")
     ] = SCRATCH_PATH,
+    index_prefix: Annotated[
+        str, typer.Option(help="Prefix for OpenSearch index name")
+    ] = "longeval-2024",
     overwrite: Annotated[bool, typer.Option(help="Overwrite existing index")] = False,
     opensearch_host: Annotated[
         str, typer.Option(help="OpenSearch host address")
@@ -72,6 +77,7 @@ def main(
         [
             Workflow(
                 root=input_path,
+                index_prefix=index_prefix,
                 overwrite=overwrite,
                 opensearch_host=opensearch_host,
             )

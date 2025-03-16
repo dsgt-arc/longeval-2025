@@ -93,3 +93,46 @@ def restore(
 
     logging.info(f"Snapshot {snapshot_name} restored successfully")
     return response
+
+
+@app.command("list")
+def list_snapshots(
+    repo_name: str = "default",
+    host: str = "localhost:9200",
+    repo_path: str = "/var/opensearch/snapshots",
+) -> None:
+    """List all snapshots in the repository."""
+    client = OpenSearch(host)
+    if not register_repository(client, repo_name, repo_path):
+        raise Exception(f"Failed to register repository {repo_name}")
+
+    logging.info(f"Listing snapshots in repository {repo_name}")
+    response = client.snapshot.get(repository=repo_name, snapshot="_all")
+    for snapshot in response["snapshots"]:
+        print(snapshot["snapshot"])
+
+
+@app.command("cleanup")
+def cleanup_snapshots(
+    repo_name: str = "default",
+    host: str = "localhost:9200",
+    repo_path: str = "/var/opensearch/snapshots",
+    retain_last: int = 5,
+) -> None:
+    """Cleanup old snapshots, retaining only the specified number of latest snapshots."""
+    client = OpenSearch(host)
+    if not register_repository(client, repo_name, repo_path):
+        raise Exception(f"Failed to register repository {repo_name}")
+
+    logging.info(f"Cleaning up snapshots in repository {repo_name}")
+    response = client.snapshot.get(repository=repo_name, snapshot="_all")
+    snapshots = response["snapshots"]
+    snapshots.sort(key=lambda s: s["start_time_in_millis"], reverse=True)
+
+    if len(snapshots) > retain_last:
+        snapshots_to_delete = snapshots[retain_last:]
+        for snapshot in snapshots_to_delete:
+            snapshot_name = snapshot["snapshot"]
+            logging.info(f"Deleting snapshot {snapshot_name}")
+            client.snapshot.delete(repository=repo_name, snapshot=snapshot_name)
+            logging.info(f"Snapshot {snapshot_name} deleted")
