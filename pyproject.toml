@@ -23,6 +23,7 @@ dependencies = [
     "contexttimer",
     "sentence-transformers",
     "gdown",
+    "pytrec_eval",
 ]
 
 [project.optional-dependencies]

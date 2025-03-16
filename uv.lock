@@ -1560,6 +1560,7 @@ dependencies = [
     { name = "opensearch-py" },
     { name = "pandas" },
     { name = "pyspark", extra = ["sql"] },
+    { name = "pytrec-eval" },
     { name = "scikit-learn" },
     { name = "sentence-transformers" },
     { name = "tiktoken" },
@@ -1570,9 +1571,9 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "ipykernel" },
     { name = "jupyterlab" },
     { name = "pace-job-monitoring" },
+    { name = "pip" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
@@ -1585,7 +1586,6 @@ requires-dist = [
     { name = "google-api-python-client" },
     { name = "google-auth" },
     { name = "google-cloud-storage" },
-    { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "jupyterlab", marker = "extra == 'dev'" },
     { name = "luigi" },
     { name = "matplotlib" },
@@ -1593,9 +1593,11 @@ requires-dist = [
     { name = "opensearch-py" },
     { name = "pace-job-monitoring", marker = "extra == 'dev'", git = "https://github.com/dsgt-kaggle-clef/pace-job-monitoring.git" },
     { name = "pandas" },
+    { name = "pip", marker = "extra == 'dev'" },
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pyspark", extras = ["sql"], specifier = ">=3.5.0" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytrec-eval" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "scikit-learn" },
     { name = "sentence-transformers" },
@@ -2347,6 +2349,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pip"
+version = "25.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/53/b309b4a497b09655cb7e07088966881a57d082f48ac3cb54ea729fd2c6cf/pip-25.0.1.tar.gz", hash = "sha256:88f96547ea48b940a3a385494e181e29fb8637898f88d88737c5049780f196ea", size = 1950850 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c9/bc/b7db44f5f39f9d0494071bddae6880eb645970366d0a200022a1a93d57f5/pip-25.0.1-py3-none-any.whl", hash = "sha256:c46efd13b6aa8279f33f2864459c8ce587ea6a1a59ee20de055868d8f7688f7f", size = 1841526 },
+]
+
+[[package]]
 name = "platformdirs"
 version = "4.3.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2645,6 +2656,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/9e/de/d3144a0bceede957f
 wheels = [
     { url = "https://files.pythonhosted.org/packages/08/20/0f2523b9e50a8052bc6a8b732dfc8568abbdc42010aef03a2d750bdab3b2/python_json_logger-3.3.0-py3-none-any.whl", hash = "sha256:dd980fae8cffb24c13caf6e158d3d61c0d6d22342f932cb6e9deedab3d35eec7", size = 15163 },
 ]
+
+[[package]]
+name = "pytrec-eval"
+version = "0.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/03/e6e84df6a7c1265579ab26bbe30ff7f8c22745aa77e0799bba471c0a3a19/pytrec_eval-0.5.tar.gz", hash = "sha256:d9eb4616e7d6b73bf1b5ba4c2c4916e88124e790b53fd61610c30158999e7bde", size = 15248 }
 
 [[package]]
 name = "pytz"
