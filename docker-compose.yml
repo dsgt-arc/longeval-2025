@@ -8,10 +8,10 @@ services:
     volumes:
       # mount the data directory to persist the data
       - ${OPENSEARCH_DATA_DIR:-$HOME/scratch/longeval/opensearch/data}:/usr/share/opensearch/data
-      - ${OPENSEARCH_SNAPSHOT_DIR:-$HOME/scratch/longeval/opensearch/snapshots}:/mnt/snapshots
+      - ${OPENSEARCH_SNAPSHOT_DIR:-$HOME/scratch/longeval/opensearch/snapshots}:/var/opensearch/snapshots
     environment:
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD?not set}
-      - path.repo=/mnt/snapshots
+      - path.repo=/var/opensearch/snapshots
       - plugins.security.disabled=true
       - discovery.type=single-node
       - bootstrap.memory_lock=true

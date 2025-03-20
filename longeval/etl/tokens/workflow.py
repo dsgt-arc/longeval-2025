@@ -10,7 +10,9 @@ from typing_extensions import Annotated
 
 from longeval.collection import ParquetCollection
 from longeval.etl.parquet.workflow import Workflow as ParquetWorkflow
-from longeval.spark import spark_resource
+from longeval.spark import get_spark
+from longeval.settings import SCRATCH_PATH
+from longeval.luigi import luigi_kwargs
 
 
 class TokenTask(luigi.Task):
@@ -23,38 +25,38 @@ class TokenTask(luigi.Task):
         return luigi.LocalTarget(f"{self.output_path}/_SUCCESS")
 
     def run(self):
-        with spark_resource() as spark:
-            encoder = tiktoken.encoding_for_model("gpt-4o-mini")
-            token_udf = F.udf(lambda s: len(encoder.encode(s)))
-            count_udf = lambda s: F.array_size(F.split(s, " "))  # noqa
-            collection = ParquetCollection(spark, self.input_path)
-            metadata_cols = [F.lit(v).alias(k) for k, v in collection.metadata.items()]
-            df = collection.documents.select(
+        spark = get_spark()
+        encoder = tiktoken.encoding_for_model("gpt-4o-mini")
+        token_udf = F.udf(lambda s: len(encoder.encode(s)))
+        count_udf = lambda s: F.array_size(F.split(s, " "))  # noqa
+        collection = ParquetCollection(spark, self.input_path)
+        metadata_cols = [F.lit(v).alias(k) for k, v in collection.metadata.items()]
+        df = collection.documents.select(
+            *metadata_cols,
+            F.lit("documents").alias("collection"),
+            F.col("docid").alias("id"),
+            token_udf("contents").alias("tokens"),
+            count_udf("contents").alias("words"),
+        ).union(
+            collection.queries.select(
                 *metadata_cols,
-                F.lit("documents").alias("collection"),
-                F.col("docid").alias("id"),
-                token_udf("contents").alias("tokens"),
-                count_udf("contents").alias("words"),
-            ).union(
-                collection.queries.select(
-                    *metadata_cols,
-                    F.lit("queries").alias("collection"),
-                    F.col("qid").alias("id"),
-                    token_udf("query").alias("tokens"),
-                    count_udf("query").alias("words"),
-                )
+                F.lit("queries").alias("collection"),
+                F.col("qid").alias("id"),
+                token_udf("query").alias("tokens"),
+                count_udf("query").alias("words"),
             )
-            df.repartition(4).write.parquet(self.output_path, mode="overwrite")
-            df = spark.read.parquet(self.output_path)
-            # show some basic statistics
-            df.groupBy("collection").agg(
-                F.count("id").alias("count"),
-                F.sum("tokens").alias("sum_tokens"),
-                F.avg("tokens").alias("avg_tokens"),
-                F.stddev("tokens").alias("stddev_tokens"),
-                F.avg("words").alias("avg_words"),
-                F.stddev("words").alias("stddev_words"),
-            ).show()
+        )
+        df.repartition(4).write.parquet(self.output_path, mode="overwrite")
+        df = spark.read.parquet(self.output_path)
+        # show some basic statistics
+        df.groupBy("collection").agg(
+            F.count("id").alias("count"),
+            F.sum("tokens").alias("sum_tokens"),
+            F.avg("tokens").alias("avg_tokens"),
+            F.stddev("tokens").alias("stddev_tokens"),
+            F.avg("words").alias("avg_words"),
+            F.stddev("words").alias("stddev_words"),
+        ).show()
 
 
 class SummarizeTokenTask(luigi.Task):
@@ -67,51 +69,52 @@ class SummarizeTokenTask(luigi.Task):
         return luigi.LocalTarget(f"{self.output_path}/_SUCCESS")
 
     def run(self):
-        with spark_resource() as spark:
-            df = spark.read.parquet(f"{self.input_path}/*/*/*").cache()
-            # make sure output path exists
-            Path(self.output_path).mkdir(parents=True, exist_ok=True)
-            stats = (
-                df.where(F.col("collection") == "documents")
-                .groupBy("split", "language", "collection", "date")
-                .agg(
-                    F.sum("tokens").alias("sum_tokens"),
-                    F.sum("words").alias("sum_words"),
-                )
-                # divided by 1m
-                .withColumn("sum_tokens_pm", F.col("sum_tokens") / 1_000_000)
-                .withColumn("sum_words_pm", F.col("sum_words") / 1_000_000)
+        spark = get_spark()
+        df = spark.read.parquet(f"{self.input_path}/*/*/*")
+        # make sure output path exists
+        Path(self.output_path).mkdir(parents=True, exist_ok=True)
+        stats = (
+            df.where(F.col("collection") == "documents")
+            .groupBy("split", "language", "collection", "date")
+            .agg(
+                F.sum("tokens").alias("sum_tokens"),
+                F.sum("words").alias("sum_words"),
             )
-            stats.show()
-            stats.toPandas().to_csv(f"{self.output_path}/documents.csv", index=False)
+            # divided by 1m
+            .withColumn("sum_tokens_pm", F.col("sum_tokens") / 1_000_000)
+            .withColumn("sum_words_pm", F.col("sum_words") / 1_000_000)
+        )
+        stats.show()
+        stats.toPandas().to_csv(f"{self.output_path}/documents.csv", index=False)
 
-            stats = (
-                df.where(F.col("collection") == "documents")
-                .groupBy("split", "language")
-                .agg(
-                    F.sum("tokens").alias("sum_tokens"),
-                    F.sum("words").alias("sum_words"),
-                )
-                # divided by 1m
-                .withColumn("sum_tokens_pm", F.col("sum_tokens") / 1_000_000)
-                .withColumn("sum_words_pm", F.col("sum_words") / 1_000_000)
+        stats = (
+            df.where(F.col("collection") == "documents")
+            .groupBy("split", "language")
+            .agg(
+                F.sum("tokens").alias("sum_tokens"),
+                F.sum("words").alias("sum_words"),
             )
-            stats.show()
-            stats.toPandas().to_csv(
-                f"{self.output_path}/documents_split.csv", index=False
-            )
+            # divided by 1m
+            .withColumn("sum_tokens_pm", F.col("sum_tokens") / 1_000_000)
+            .withColumn("sum_words_pm", F.col("sum_words") / 1_000_000)
+        )
+        stats.show()
+        stats.toPandas().to_csv(f"{self.output_path}/documents_split.csv", index=False)
 
-            with open(self.output().path, "w") as f:
-                f.write("")
+        with open(self.output().path, "w") as f:
+            f.write("")
 
 
 class Workflow(luigi.Task):
-    input_path = luigi.Parameter(default="/mnt/data/longeval")
-    output_path = luigi.Parameter(default="/mnt/data/longeval")
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
 
-    def dependencies(self):
+    def require(self):
         return [
-            ParquetWorkflow(input_path=self.input_path, output_path=self.output_path)
+            ParquetWorkflow(
+                input_path=self.input_path,
+                output_path=self.output_path,
+            )
         ]
 
     def _get_collection_roots(self, root):
@@ -144,23 +147,13 @@ class Workflow(luigi.Task):
         )
 
 
-def main(
-    input_path: Annotated[
-        str, typer.Argument(help="Input root directory")
-    ] = "/mnt/data/longeval",
-    output_path: Annotated[
-        str, typer.Argument(help="Output root directory")
-    ] = "/mnt/data/longeval",
-    scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
+def count_tokens(
+    input_path: Annotated[str, typer.Argument(help="Input path")] = SCRATCH_PATH,
+    output_path: Annotated[str, typer.Option(help="Output root directory")] = None,
+    scheduler_host: Annotated[str, typer.Option(help="Scheduler host")] = None,
 ):
     """Count the number of tokens in the collection"""
-    kwargs = {}
-    if scheduler_host:
-        kwargs["scheduler_host"] = scheduler_host
-    else:
-        kwargs["local_scheduler"] = True
-
     luigi.build(
-        [Workflow(input_path=input_path, output_path=output_path)],
-        **kwargs,
+        [Workflow(input_path=input_path, output_path=output_path or input_path)],
+        **luigi_kwargs(scheduler_host),
     )

@@ -8,8 +8,10 @@ from subprocess import run
 
 def download_and_unzip(id: str, output: Path):
     if not output.exists():
+        print(f"Downloading {output} from google drive...")
         gdown.download(id=id, output=output.as_posix(), quiet=False)
     # unzip and overwrite
+    print(f"Unzipping {output}...")
     run(["unzip", "-o", output.as_posix(), "-d", output.parent.as_posix()], check=True)
 
 
