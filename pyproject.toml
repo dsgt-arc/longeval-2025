@@ -24,6 +24,8 @@ dependencies = [
     "sentence-transformers",
     "gdown",
     "pytrec_eval",
+    "numba",
+    "umap-learn"
 ]
 
 [project.optional-dependencies]

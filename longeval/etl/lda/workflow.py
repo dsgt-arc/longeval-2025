@@ -16,7 +16,8 @@ import os
 from pyspark.sql.functions import col, array_max, array_position
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
+import umap
+from longeval.collection import ParquetCollection
 
 
 def create_lda_model(spark, docs, output_path, num_topics):
@@ -70,7 +71,7 @@ def create_lda_model(spark, docs, output_path, num_topics):
     output_file_path = os.path.join(output_path, 'topic_distribution.png')
     plt.savefig(output_file_path)
     generatePcaGraph(lda_model, vectorized_docs, output_path, num_topics)
-    generateTsneGraph(lda_model, vectorized_docs, output_path, num_topics)
+    generateUmapGraph(lda_model, vectorized_docs, output_path, num_topics)
 
 def generatePcaGraph(lda_model, vectorized_docs, output_path, k):
     doc_topics = lda_model.transform(vectorized_docs)  # Output: Soft assignment of docs to topics
@@ -96,12 +97,14 @@ def generatePcaGraph(lda_model, vectorized_docs, output_path, k):
     output_file_path = os.path.join(output_path, 'pca_topics.png')
     plt.savefig(output_file_path)
 
-def generateTsneGraph(lda_model, vectorized_docs, output_path, k):
+def generateUmapGraph(lda_model, vectorized_docs, output_path, k):
     doc_topics = lda_model.transform(vectorized_docs)  
     doc_topic_df = doc_topics.select("topicDistribution").toPandas()
     doc_topic_array = np.vstack(doc_topic_df["topicDistribution"].apply(lambda v: v.toArray()))
-    tsne = TSNE(n_components=2, perplexity=30, random_state=42)
-    doc_topic_2d = tsne.fit_transform(doc_topic_array)
+
+    umap_reducer = umap.UMAP(n_components=2, random_state=42)
+    doc_topic_2d = umap_reducer.fit_transform(doc_topic_array)
+
     dominant_topics = np.argmax(doc_topic_array, axis=1)
     df_plot = pd.DataFrame({
         "x": doc_topic_2d[:, 0],
@@ -114,10 +117,10 @@ def generateTsneGraph(lda_model, vectorized_docs, output_path, k):
     cbar = plt.colorbar(scatter, label="Topic")
     cbar.set_ticks(range(k))  
     cbar.set_ticklabels(range(k))  
-    plt.xlabel("t-SNE Dimension 1")
-    plt.ylabel("t-SNE Dimension 2")
-    plt.title("LDA Document Clusters via t-SNE")
-    output_file_path = os.path.join(output_path, 'tSne_topics.png')
+    plt.xlabel("UMAP Dimension 1")
+    plt.ylabel("UMAP Dimension 2")
+    plt.title("LDA Document Clusters via UMAP")
+    output_file_path = os.path.join(output_path, 'umap_topics.png')
     plt.savefig(output_file_path)
 
 class CreateLDAModel(luigi.Task):
@@ -129,7 +132,7 @@ class CreateLDAModel(luigi.Task):
         print("num topics in lda model: ",  self.num_topics)
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
-            collection = RawCollection(spark, self.input_path)
+            collection = ParquetCollection(spark, self.input_path)
             docs = collection.documents.cache()
             create_lda_model(spark, docs, self.output_path, self.num_topics)
 
