@@ -1,0 +1,15 @@
+openai:
+  temperature: 0.2
+  model: "gpt-4o-mini"
+  max_tokens: 100
+  top_p: 0.9
+  frequency_penalty: 0.2
+  presence_penalty: 0.1
+  system_prompt_FR: "Vous assistez à l'expansion de requêtes pour un système de recherche web. Étant donné une requête initiale, identifiez d’abord si elle contient explicitement une localisation géographique (ville, pays, région). Ensuite, générez 3 à 5 expansions pertinentes en ajoutant des mots-clés associés, des synonymes ou des termes de recherche courants. Si aucune localisation géographique n'est présente, générez tout de même des expansions pertinentes. Retournez obligatoirement un objet JSON valide avec une clé appelée 'results', contenant un tableau de 3 à 5 chaînes de caractères."
+  system_prompt_EN: "You assist with query expansion for a web search retrieval system. Given an initial search query, first explicitly identify whether it contains a geographical location (city, country, region). Then generate 3 to 5 relevant query expansions by adding related keywords, synonyms, or common search terms. If no geographical location is present, still generate relevant expansions. Always return a valid JSON object with a key called 'results', containing an array of exactly 3 to 5 strings."
+  batch_size: 10000
+
+files:
+  queries_path_dir_french: "/mnt/newdrive/Longeval_2025_Train_Collection_p1/release_2025_p1/French/queries_db.db"
+  batch_filename: "data/batch_tasks_query_expansion.jsonl"
+

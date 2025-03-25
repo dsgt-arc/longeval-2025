@@ -158,6 +158,7 @@ cython_debug/
 .idea/
 
 # Local data and run artifacts
+data/
 
 # .env holds committed project defaults; .env.local stays local
 !.env
