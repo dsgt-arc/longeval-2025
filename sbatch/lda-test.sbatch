@@ -2,7 +2,7 @@
 #SBATCH -Jlongeval-lda                          # Job name
 #SBATCH --account=paceship-dsgt_clef2025        # charge account
 #SBATCH --cpus-per-task=16                      # Number of cores per task
-#SBATCH --mem-per-cpu=4G                        # Memory per core
+#SBATCH --mem-per-cpu=8G                        # Memory per core
 #SBATCH -t120                                   # Duration of the job (Ex: 15 mins)
 #SBATCH -qembers                                # QOS Name
 #SBATCH -oReport-%j.out                         # Combined output and error messages file
@@ -20,7 +20,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/longeval
 scratch_dir=$(realpath ~/scratch/longeval)
 
-export PYSPARK_DRIVER_MEMORY=60g
+export PYSPARK_DRIVER_MEMORY=50g
 export PYSPARK_DRIVER_CORES=16
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 longeval etl lda \

@@ -18,146 +18,142 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import umap
 from longeval.collection import ParquetCollection
+from pyspark.ml.clustering import DistributedLDAModel
+from pyspark.ml.feature import CountVectorizerModel
 
 
-def create_lda_model(spark, docs, output_path, num_topics):
-    tokenizer = Tokenizer(inputCol="contents", outputCol="words")
-    tokenized = tokenizer.transform(docs)
-    remover = StopWordsRemover(inputCol="words", outputCol="filtered_words")
-    filtered = remover.transform(tokenized)
-    vectorizer = CountVectorizer(inputCol="filtered_words", outputCol="features")
-    vector_model = vectorizer.fit(filtered)
-    vectorized_docs = vector_model.transform(filtered)
-    lda = LDA(k=num_topics, maxIter=10, featuresCol="features", optimizer="em")
-    lda_model = lda.fit(vectorized_docs)
-    topics = lda_model.describeTopics(maxTermsPerTopic=100)
-    vocab = vector_model.vocabulary  
-    if not vocab:
-        raise ValueError("Vocabulary is empty. Please check the CountVectorizer step.")
-    topic_words = {}
-    for row in topics.collect():
-        topic_index = row.topic
-        term_indices = row.termIndices
-        terms = [vocab[index] for index in term_indices]  # Map indices to words
-        topic_words[topic_index] = terms
-    topic_words_file_path = os.path.join(output_path, "topicWords.txt")
-    with open(topic_words_file_path, 'w') as f:
-        for topic, words in topic_words.items():
-            f.write(f"Topic {topic}: {', '.join(words)}\n")
-    topic_distributions = lda_model.transform(vectorized_docs)
-    doc_topic_df = topic_distributions.select("docid", "topicDistribution").toPandas()
-    doc_topic_array = np.vstack(doc_topic_df["topicDistribution"].apply(lambda v: v.toArray()))
-    doc_topic_df['highest_topic'] = np.argmax(doc_topic_array, axis=1)  # Get index of the highest topic
-    topic_probabilities_df = pd.DataFrame(doc_topic_array, columns=[f'topic_{i}' for i in range(doc_topic_array.shape[1])])
-    result_df = pd.concat([doc_topic_df[['docid']], 
-                        pd.DataFrame({'highest_topic': doc_topic_df['highest_topic']}), 
-                        topic_probabilities_df], axis=1)
-    
-    output_file_path = os.path.join(output_path, "docTopicDistribution.csv")
-    result_df.to_csv(output_file_path, index=False)
-    topic_distribution = lda_model.transform(vectorized_docs)
-    topic_distribution_list = topic_distribution.select("topicDistribution").collect()
-    topic_counts = []
-    for row in topic_distribution_list:
-        topic_counts.append(row.topicDistribution)
-    topic_counts_df = pd.DataFrame(topic_counts, columns=[f'Topic {i}' for i in range(num_topics)])
-    topic_sums = topic_counts_df.sum().sort_values(ascending=False)
-    plt.figure(figsize=(10, 6))
-    topic_sums.plot(kind='bar', color='skyblue')
-    plt.title('Topic Distribution')
-    plt.xlabel('Topics')
-    plt.ylabel('Number of Documents')
-    plt.xticks(rotation=45)
-    output_file_path = os.path.join(output_path, 'topic_distribution.png')
-    plt.savefig(output_file_path)
-    generatePcaGraph(lda_model, vectorized_docs, output_path, num_topics)
-    generateUmapGraph(lda_model, vectorized_docs, output_path, num_topics)
 
-def generatePcaGraph(lda_model, vectorized_docs, output_path, k):
-    doc_topics = lda_model.transform(vectorized_docs)  # Output: Soft assignment of docs to topics
-    doc_topic_df = doc_topics.select("topicDistribution").toPandas()
-    doc_topic_array = np.vstack(doc_topic_df["topicDistribution"].apply(lambda v: v.toArray()))
-    pca = PCA(n_components=2)  # Reduce to 2D
-    doc_topic_2d = pca.fit_transform(doc_topic_array)
-    dominant_topics = np.argmax(doc_topic_array, axis=1)
-    df_plot = pd.DataFrame({
-        "x": doc_topic_2d[:, 0],
-        "y": doc_topic_2d[:, 1],
-        "topic": dominant_topics
-    })
-    plt.figure(figsize=(10, 6))
-    cmapValue = "tab20" 
-    scatter = plt.scatter(df_plot["x"], df_plot["y"], c=df_plot["topic"], cmap=cmapValue, alpha=0.6)
-    cbar = plt.colorbar(scatter, label="Topic")
-    cbar.set_ticks(range(k))  
-    cbar.set_ticklabels(range(k))  
-    plt.xlabel("PCA Dimension 1")
-    plt.ylabel("PCA Dimension 2")
-    plt.title("LDA Document Clusters via PCA")
-    output_file_path = os.path.join(output_path, 'pca_topics.png')
-    plt.savefig(output_file_path)
-
-def generateUmapGraph(lda_model, vectorized_docs, output_path, k):
-    doc_topics = lda_model.transform(vectorized_docs)  
-    doc_topic_df = doc_topics.select("topicDistribution").toPandas()
-    doc_topic_array = np.vstack(doc_topic_df["topicDistribution"].apply(lambda v: v.toArray()))
-
-    umap_reducer = umap.UMAP(n_components=2, random_state=42)
-    doc_topic_2d = umap_reducer.fit_transform(doc_topic_array)
-
-    dominant_topics = np.argmax(doc_topic_array, axis=1)
-    df_plot = pd.DataFrame({
-        "x": doc_topic_2d[:, 0],
-        "y": doc_topic_2d[:, 1],
-        "topic": dominant_topics
-    })
-    plt.figure(figsize=(10, 6))
-    cmapValue = "tab20" 
-    scatter = plt.scatter(df_plot["x"], df_plot["y"], c=df_plot["topic"], cmap=cmapValue, alpha=0.6)
-    cbar = plt.colorbar(scatter, label="Topic")
-    cbar.set_ticks(range(k))  
-    cbar.set_ticklabels(range(k))  
-    plt.xlabel("UMAP Dimension 1")
-    plt.ylabel("UMAP Dimension 2")
-    plt.title("LDA Document Clusters via UMAP")
-    output_file_path = os.path.join(output_path, 'umap_topics.png')
-    plt.savefig(output_file_path)
-
-class CreateLDAModel(luigi.Task):
-    input_path = luigi.Parameter(default="/mnt/data/longeval")
-    output_path = luigi.Parameter(default="/mnt/data/longeval")
-    num_topics = luigi.IntParameter(default=20)
+class TrainLDAModel(luigi.Task):
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    num_topics = luigi.IntParameter()
 
     def run(self):
-        print("num topics in lda model: ",  self.num_topics)
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
             collection = ParquetCollection(spark, self.input_path)
             docs = collection.documents.cache()
-            create_lda_model(spark, docs, self.output_path, self.num_topics)
+
+            tokenizer = Tokenizer(inputCol="contents", outputCol="words")
+            tokenized = tokenizer.transform(docs)
+            remover = StopWordsRemover(inputCol="words", outputCol="filtered_words")
+            filtered = remover.transform(tokenized)
+
+            vectorizer = CountVectorizer(inputCol="filtered_words", outputCol="features")
+            vector_model = vectorizer.fit(filtered)
+            vectorized_docs = vector_model.transform(filtered)
+
+            lda = LDA(k=self.num_topics, maxIter=10, featuresCol="features", optimizer="em")
+            lda_model = lda.fit(vectorized_docs)
+
+            lda_model.save(os.path.join(self.output_path, "lda_model"))
+            vector_model.save(os.path.join(self.output_path, "vector_model"))
+
+            print("LDA model and vectorizer saved successfully.")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution.csv"))
-    
-class Workflow(luigi.Task):
-    num_topics = luigi.IntParameter(default=20)
-    input_path = luigi.Parameter(default="/mnt/data/longeval")
-    output_path = luigi.Parameter(default="/mnt/data/longeval")
+        return luigi.LocalTarget(os.path.join(self.output_path, "lda_model"))
+
+
+class RunLDAInference(luigi.Task):
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    num_topics = luigi.IntParameter()
 
     def requires(self):
-        return CreateLDAModel(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics)
+        return TrainLDAModel(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics)
 
     def run(self):
-        print("output path: ", self.output_path)
-        print("input path: ",  self.input_path)
-        print("num topics: ",  self.num_topics)
+        with spark_resource() as spark:
+            lda_model = DistributedLDAModel.load(os.path.join(self.output_path, "lda_model"))
+            vector_model = CountVectorizerModel.load(os.path.join(self.output_path, "vector_model"))
+            collection = ParquetCollection(spark, self.input_path)
+            docs = collection.documents.cache()
+            tokenized = Tokenizer(inputCol="contents", outputCol="words").transform(docs)
+            filtered = StopWordsRemover(inputCol="words", outputCol="filtered_words").transform(tokenized)
+            vectorized_docs = vector_model.transform(filtered)
 
-        dummy_file_path = os.path.join(self.output_path, "dummy.txt")
-        with open(dummy_file_path, 'w') as f:
-            f.write("This is a dummy file to mark the completion of the Workflow task.")
+            topics = lda_model.describeTopics(maxTermsPerTopic=100)
+            vocab = vector_model.vocabulary
+            if not vocab:
+                raise ValueError("Vocabulary is empty. Please check the CountVectorizer step.")
+            topic_words = {}
+            for row in topics.collect():
+                topic_index = row.topic
+                term_indices = row.termIndices
+                terms = [vocab[index] for index in term_indices]  # Map indices to words
+                topic_words[topic_index] = terms
+            topic_words_file_path = os.path.join(self.output_path, "topicWords.txt")
+            with open(topic_words_file_path, 'w') as f:
+                for topic, words in topic_words.items():
+                    f.write(f"Topic {topic}: {', '.join(words)}\n")
+
+            topic_distributions = lda_model.transform(vectorized_docs)
+            doc_topic_df = topic_distributions.select("docid", "topicDistribution").toPandas()
+            doc_topic_array = np.vstack(doc_topic_df["topicDistribution"].apply(lambda v: v.toArray()))
+            doc_topic_df['highest_topic'] = np.argmax(doc_topic_array, axis=1)
+
+            topic_probabilities_df = pd.DataFrame(doc_topic_array, columns=[f'topic_{i}' for i in range(self.num_topics)])
+            result_df = pd.concat([doc_topic_df[['docid']], doc_topic_df[['highest_topic']], topic_probabilities_df], axis=1)
+            # result_df.to_csv(os.path.join(self.output_path, "docTopicDistribution.csv"), index=False)
+            result_parquet_path = os.path.join(self.output_path, "docTopicDistribution.parquet")
+            result_df_spark = spark.createDataFrame(result_df)  # Convert to Spark DataFrame
+            result_df_spark.write.parquet(result_parquet_path)
+            print("Inference completed.")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.output_path, "dummy.txt"))
+        return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution.parquet"))
+        # return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution.csv"))
+
+
+class PlotResults(luigi.Task):
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    num_topics = luigi.IntParameter()
+
+    def requires(self):
+        return RunLDAInference(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics)
+
+    def run(self):
+        # doc_topic_df = pd.read_csv(os.path.join(self.output_path, "docTopicDistribution.csv"))
+        with spark_resource() as spark:
+            doc_topic_spark_df = spark.read.parquet(os.path.join(self.output_path, "docTopicDistribution.parquet"))
+            doc_topic_df = doc_topic_spark_df.toPandas()
+            doc_topic_array = doc_topic_df.iloc[:, 2:].values
+            dominant_topics = doc_topic_df['highest_topic'].values
+
+            # PCA Plot
+            pca = PCA(n_components=2)
+            doc_topic_2d_pca = pca.fit_transform(doc_topic_array)
+            plt.figure(figsize=(10, 6))
+            plt.scatter(doc_topic_2d_pca[:, 0], doc_topic_2d_pca[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
+            plt.colorbar(label='Topic')
+            plt.title('PCA Topic Clusters')
+            plt.savefig(os.path.join(self.output_path, 'pca_topics.png'))
+
+            # UMAP Plot
+            umap_reducer = umap.UMAP(n_components=2, random_state=42)
+            doc_topic_2d_umap = umap_reducer.fit_transform(doc_topic_array)
+            plt.figure(figsize=(10, 6))
+            plt.scatter(doc_topic_2d_umap[:, 0], doc_topic_2d_umap[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
+            plt.colorbar(label='Topic')
+            plt.title('UMAP Topic Clusters')
+            plt.savefig(os.path.join(self.output_path, 'umap_topics.png'))
+
+    def output(self):
+        return [
+            luigi.LocalTarget(os.path.join(self.output_path, 'pca_topics.png')),
+            luigi.LocalTarget(os.path.join(self.output_path, 'umap_topics.png'))
+        ]
+
+
+class Workflow(luigi.WrapperTask):
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    num_topics = luigi.IntParameter()
+
+    def requires(self):
+        return PlotResults(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics)
 
 
 def main(
