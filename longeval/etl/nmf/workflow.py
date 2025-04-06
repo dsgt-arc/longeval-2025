@@ -44,7 +44,7 @@ class TrainNMFModel(luigi.Task):
                 top_words = [vocab[i] for i in topic.argsort()[:-100:-1]]
                 topic_words[topic_idx] = top_words
 
-            pd.DataFrame(topic_words.items(), columns=["Topic", "Words"]).to_csv(os.path.join(self.output_path, "topicWords.txt"), index=False)
+            pd.DataFrame(topic_words.items(), columns=["Topic", "Words"]).to_csv(os.path.join(self.output_path, "topicWords_nmf.txt"), index=False)
             np.save(os.path.join(self.output_path, "nmf_W.npy"), W)
 
             print("NMF model trained and saved.")
@@ -74,12 +74,12 @@ class RunNMFInference(luigi.Task):
 
             doc_topic_df = pd.DataFrame(W, columns=[f'topic_{i}' for i in range(self.num_topics)])
             doc_topic_df["highest_topic"] = np.argmax(W, axis=1)
-            doc_topic_df.to_parquet(os.path.join(self.output_path, "docTopicDistribution.parquet"))
+            doc_topic_df.to_parquet(os.path.join(self.output_path, "docTopicDistribution_nmf.parquet"))
 
             print("NMF inference completed.")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution.parquet"))
+        return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution_nmf.parquet"))
 
 class PlotResults(luigi.Task):
     input_path = luigi.Parameter()
@@ -91,7 +91,7 @@ class PlotResults(luigi.Task):
         return RunNMFInference(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics, language=self.language)
 
     def run(self):
-        doc_topic_df = pd.read_parquet(os.path.join(self.output_path, "docTopicDistribution.parquet"))
+        doc_topic_df = pd.read_parquet(os.path.join(self.output_path, "docTopicDistribution_nmf.parquet"))
         doc_topic_array = doc_topic_df.iloc[:, :-1].values
         dominant_topics = doc_topic_df["highest_topic"].values
 
@@ -100,21 +100,21 @@ class PlotResults(luigi.Task):
         plt.figure(figsize=(10, 6))
         plt.scatter(doc_topic_2d_pca[:, 0], doc_topic_2d_pca[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
         plt.colorbar(label='Topic')
-        plt.title('PCA Topic Clusters')
-        plt.savefig(os.path.join(self.output_path, 'pca_topics.png'))
+        plt.title('NMF PCA Topic Clusters')
+        plt.savefig(os.path.join(self.output_path, 'pca_nmf_topics.png'))
 
         mds = MDS(n_components=2, random_state=42)
         doc_topic_2d_mds = mds.fit_transform(doc_topic_array)
         plt.figure(figsize=(10, 6))
         plt.scatter(doc_topic_2d_mds[:, 0], doc_topic_2d_mds[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
         plt.colorbar(label='Topic')
-        plt.title('MDS Topic Clusters')
-        plt.savefig(os.path.join(self.output_path, 'mds_topics.png'))
+        plt.title('NMF MDS Topic Clusters')
+        plt.savefig(os.path.join(self.output_path, 'mds_nmf_topics.png'))
 
     def output(self):
         return [
-            luigi.LocalTarget(os.path.join(self.output_path, 'pca_topics.png')),
-            luigi.LocalTarget(os.path.join(self.output_path, 'mds_topics.png'))
+            luigi.LocalTarget(os.path.join(self.output_path, 'pca_nmf_topics.png')),
+            luigi.LocalTarget(os.path.join(self.output_path, 'mds_nmf_topics.png'))
         ]
 
 class Workflow(luigi.WrapperTask):
