@@ -20,7 +20,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/longeval
 scratch_dir=$(realpath ~/scratch/longeval)
 
-export PYSPARK_DRIVER_MEMORY=50g
+export PYSPARK_DRIVER_MEMORY=110g
 export PYSPARK_DRIVER_CORES=16
 export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
 longeval etl lda \

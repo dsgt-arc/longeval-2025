@@ -20,8 +20,7 @@ import umap
 from longeval.collection import ParquetCollection
 from pyspark.ml.clustering import DistributedLDAModel
 from pyspark.ml.feature import CountVectorizerModel
-
-
+from sklearn.manifold import MDS
 
 class TrainLDAModel(luigi.Task):
     input_path = luigi.Parameter()
@@ -84,9 +83,11 @@ class RunLDAInference(luigi.Task):
                 terms = [vocab[index] for index in term_indices]  # Map indices to words
                 topic_words[topic_index] = terms
             topic_words_file_path = os.path.join(self.output_path, "topicWords.txt")
-            with open(topic_words_file_path, 'w') as f:
-                for topic, words in topic_words.items():
-                    f.write(f"Topic {topic}: {', '.join(words)}\n")
+            # with open(topic_words_file_path, 'w') as f:
+            #     for topic, words in topic_words.items():
+            #         f.write(f"Topic {topic}: {', '.join(words)}\n")
+            topic_words_df = pd.DataFrame(list(topic_words.items()), columns=["Topic", "Words"])
+            topic_words_df.to_csv(topic_words_file_path, index=False)
 
             topic_distributions = lda_model.transform(vectorized_docs)
             doc_topic_df = topic_distributions.select("docid", "topicDistribution").toPandas()
@@ -132,18 +133,27 @@ class PlotResults(luigi.Task):
             plt.savefig(os.path.join(self.output_path, 'pca_topics.png'))
 
             # UMAP Plot
-            umap_reducer = umap.UMAP(n_components=2, random_state=42)
-            doc_topic_2d_umap = umap_reducer.fit_transform(doc_topic_array)
+            # umap_reducer = umap.UMAP(n_components=2, random_state=42)
+            # doc_topic_2d_umap = umap_reducer.fit_transform(doc_topic_array)
+            # plt.figure(figsize=(10, 6))
+            # plt.scatter(doc_topic_2d_umap[:, 0], doc_topic_2d_umap[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
+            # plt.colorbar(label='Topic')
+            # plt.title('UMAP Topic Clusters')
+            # plt.savefig(os.path.join(self.output_path, 'umap_topics.png'))
+
+            # MDS plot
+            mds = MDS(n_components=2, random_state=42)
+            doc_topic_2d_mds = mds.fit_transform(doc_topic_array)
             plt.figure(figsize=(10, 6))
-            plt.scatter(doc_topic_2d_umap[:, 0], doc_topic_2d_umap[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
+            plt.scatter(doc_topic_2d_mds[:, 0], doc_topic_2d_mds[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
             plt.colorbar(label='Topic')
-            plt.title('UMAP Topic Clusters')
-            plt.savefig(os.path.join(self.output_path, 'umap_topics.png'))
+            plt.title('MDS Topic Clusters')
+            plt.savefig(os.path.join(self.output_path, 'mds_topics.png'))
 
     def output(self):
         return [
             luigi.LocalTarget(os.path.join(self.output_path, 'pca_topics.png')),
-            luigi.LocalTarget(os.path.join(self.output_path, 'umap_topics.png'))
+            luigi.LocalTarget(os.path.join(self.output_path, 'mds_topics.png'))
         ]
 
 
