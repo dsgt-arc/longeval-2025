@@ -12,4 +12,5 @@ openai:
 files:
   queries_path_dir_french: "/mnt/newdrive/Longeval_2025_Train_Collection_p1/release_2025_p1/French/queries_db.db"
   batch_filename: "data/batch_tasks_query_expansion.jsonl"
+  
 
