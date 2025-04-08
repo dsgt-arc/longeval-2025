@@ -153,6 +153,25 @@ class OpenAIQueryExpansion:
 
         return response.choices[0].message.content
 
+    def post_process_results(self, filename):
+        with open(filename) as f:
+            data = [json.loads(line) for line in f]
+        
+        ids = []
+        results = []
+        for output in data:
+            id = output['custom_id'].split('-')[1]
+            try:
+                results.append(json.loads(output['response']['body']['choices'][0]['message']['content'])['results'])
+                ids.append(id)
+            except:
+                print(f'Error in Json for query id={id}; Skipping..')
+
+        out = pd.concat([pd.DataFrame(ids), pd.DataFrame(results)], axis=1).iloc[:,:6] #we allow max 5 query expansions
+        
+        out.columns = ['query_id', 'expansion1', 'expansion2', 'expansion3', 'expansion4', 'expansion5']
+         
+        return out
  
     def monitor_batch_jobs(self, batch_jobs, check_interval=30, download=True):
         all_completed = False
@@ -213,15 +232,33 @@ if __name__ == "__main__":
     with open("config/openai_query_expansion.yml", "r") as file:
         config = ConfigBox(yaml.safe_load(file))
     
+    expand_queries = False
     query_expansion = OpenAIQueryExpansion(config=config)
     query_expansion.load_original_queries(limit=None)
+        
+    if expand_queries:
+ 
+        batch_files = query_expansion.generate_batch_files()
+        batch_jobs = query_expansion.upload_files(batch_files)
+        
+        query_expansion.monitor_batch_jobs(batch_jobs)
+    else:
+        outputfiledir = 'data/query-expansions/output/'
+        files = os.listdir(outputfiledir)
+        
+        individual_dfs = []
+        for f in files:
+            out = query_expansion.post_process_results(f"{outputfiledir}{f}")
+            individual_dfs.append(out)
+        all_expansions = pd.concat(individual_dfs)
+        all_expansions['query_id'] = all_expansions['query_id'].astype(str)  # or astype(int) depending on what you want
+        query_expansion.queries_original['query_id'] = query_expansion.queries_original['query_id'].astype(str)
+
+        expanded_queries_full = pd.merge(query_expansion.queries_original, all_expansions, how='left', left_on='query_id', right_on='query_id')
+        expanded_queries_full.to_csv('data/query-expansions/expanded_results.csv')
    
-    batch_files = query_expansion.generate_batch_files()
-    batch_jobs = query_expansion.upload_files(batch_files)
-    
-    query_expansion.monitor_batch_jobs(batch_jobs)
-    
-    print('a')
+        
+        
    
     
         
