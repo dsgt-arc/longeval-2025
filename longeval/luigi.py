@@ -1,4 +1,7 @@
-def luigi_kwargs(scheduler_host: str = None):
+from typing import Optional, Any
+
+
+def luigi_kwargs(scheduler_host: Optional[str] = None) -> dict[str, Any]:
     """Get the kwargs for luigi build."""
     kwargs = {}
     if scheduler_host:
