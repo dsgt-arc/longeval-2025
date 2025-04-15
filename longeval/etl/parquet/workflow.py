@@ -6,7 +6,8 @@ from longeval.spark import get_spark
 import typer
 from typing_extensions import Annotated
 from longeval.luigi import luigi_kwargs
-from longeval.settings import SCRATCH_PATH
+from .tokens import TokenTask
+from pathlib import Path
 
 
 class ParquetCollectionTask(luigi.Task):
@@ -39,14 +40,17 @@ class Workflow(luigi.Task):
             input_path=self.input_path,
             output_path=self.output_path,
         )
+        yield TokenTask(
+            input_path=self.output_path,
+            # output path should be sibling of the parquet output
+            output_path=(Path(self.output_path).parent / "tokens").as_posix(),
+        )
 
 
 def to_parquet(
-    input_path: Annotated[
-        str, typer.Argument(help="Input root directory")
-    ] = SCRATCH_PATH + "/2025",
-    output_path: Annotated[str, typer.Argument(help="Output root directory")] = None,
-    scheduler_host: Annotated[str, typer.Option(help="Scheduler host")] = None,
+    input_path: Annotated[str, typer.Argument(help="Input root directory")],
+    output_path: Annotated[str, typer.Argument(help="Output root directory")],
+    scheduler_host: Annotated[str | None, typer.Option(help="Scheduler host")] = None,
 ):
     """Convert raw data to parquet"""
     luigi.build(
