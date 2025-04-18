@@ -25,7 +25,8 @@ dependencies = [
     "gdown",
     "pytrec_eval",
     "numba",
-    "umap-learn"
+    "umap-learn",
+    "pyserini>=0.22.1",
 ]
 
 [project.optional-dependencies]
