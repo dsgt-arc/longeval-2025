@@ -17,6 +17,8 @@ from longeval.collection import ParquetCollection
 from pyspark.sql import functions as F
 from longeval.luigi import BashScriptTask
 from textwrap import dedent
+from .evaluation import prepare_queries, run_search, score_search
+from tqdm import tqdm
 
 app = typer.Typer()
 
@@ -72,7 +74,7 @@ class BM25IndexTask(BashScriptTask, OptionMixin):
         )
 
     def output(self):
-        return luigi.LocalTarget(f"{self.output_path}/_SUCCESS")
+        return luigi.LocalTarget(f"{self.output_path}/index/_SUCCESS")
 
     def script_text(self) -> str:
         return dedent(
@@ -83,12 +85,50 @@ class BM25IndexTask(BashScriptTask, OptionMixin):
                 --input {self.output_path}/jsonl \
                 --index {self.output_path}/index \
                 --generator DefaultLuceneDocumentGenerator \
+                --language fr \
                 --threads {self.parallelism} \
                 --storePositions \
                 --storeDocvectors
-                # --storeRaw
+            touch {self.output_path}/index/_SUCCESS
             """
         )
+
+
+class EvaluateBM25Task(luigi.Task, OptionMixin):
+    """Evaluate the BM25 index using the specified queries and qrels."""
+
+    input_path: str = luigi.Parameter(description="Path to the input JSONL file")
+    output_path: str = luigi.Parameter(description="Path to the output index directory")
+
+    def requires(self):
+        """Define the dependencies for the evaluation task."""
+        return BM25IndexTask(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            sample_size=self.sample_size,
+            parallelism=self.parallelism,
+        )
+
+    def output(self):
+        return luigi.LocalTarget(f"{self.output_path}/evaluation/_SUCCESS")
+
+    def run(self):
+        with spark_resource(cores=self.parallelism) as spark:
+            collection = ParquetCollection(spark, self.input_path)
+            queries = prepare_queries(collection).cache()
+            index_path = f"{self.output_path}/index"
+            dates = sorted(
+                [r.date for r in queries.select("date").distinct().collect()]
+            )
+            for date in tqdm(dates):
+                subset = queries.filter(F.col("date") == date)
+                results = run_search(subset, index_path)
+                res = score_search(results)
+                res.repartition(1).write.parquet(
+                    f"{self.output_path}/evaluation/date={date}", mode="overwrite"
+                )
+        with open(self.output().path, "w") as f:
+            f.write()
 
 
 @app.command()
@@ -105,7 +145,7 @@ def run_bm25(
     """Run BM25 on the specified index and query file."""
     luigi.build(
         [
-            BM25IndexTask(
+            EvaluateBM25Task(
                 input_path=input_path,
                 output_path=output_path,
                 sample_size=0.001 if should_sample else 0.0,

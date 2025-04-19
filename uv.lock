@@ -2008,6 +2008,14 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ipykernel" },
+    { name = "jupyterlab" },
+    { name = "pip" },
+    { name = "pre-commit" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "contexttimer" },
@@ -2039,6 +2047,14 @@ requires-dist = [
     { name = "unidecode" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "jupyterlab", specifier = ">=4.3.6" },
+    { name = "pip", specifier = ">=25.0.1" },
+    { name = "pre-commit", specifier = ">=4.1.0" },
+]
 
 [[package]]
 name = "luigi"
