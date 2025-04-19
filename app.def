@@ -17,6 +17,7 @@ From: ubuntu:24.04
         wget \
         git \
         vim \
+        bash \
         build-essential \
         ca-certificates
     curl -LsSf https://astral.sh/uv/install.sh | sh

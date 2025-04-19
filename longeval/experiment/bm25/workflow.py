@@ -18,12 +18,14 @@ from pyspark.sql import functions as F
 from longeval.luigi import BashScriptTask
 from textwrap import dedent
 from .evaluation import prepare_queries, run_search, score_search
-from tqdm import tqdm
 
 app = typer.Typer()
 
 
 class OptionMixin:
+    input_path: str = luigi.Parameter(description="Path to the input collection file")
+    output_path: str = luigi.Parameter(description="Path to the output directory")
+    date: str = luigi.Parameter(description="Date to use for the collection")
     sample_size: float = luigi.FloatParameter(
         default=0.0,
         description="Sample size to use for the collection. If 0, use the full collection.",
@@ -40,21 +42,21 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
     https://github.com/castorini/pyserini/blob/master/docs/usage-index.md#building-a-bm25-index-direct-java-implementation
     """
 
-    input_path: str = luigi.Parameter(description="Path to the input collection file")
-    output_path: str = luigi.Parameter(description="Path to the output JSONL file")
-
     def output(self):
         return luigi.LocalTarget(f"{self.output_path}/jsonl/_SUCCESS")
 
     def run(self):
-        with spark_resource(cores=self.parallelism) as spark:
+        with spark_resource() as spark:
             docs = ParquetCollection(spark, self.input_path).documents
 
             if self.sample_size > 0.0:
                 docs = docs.sample(self.sample_size)
             (
-                docs.select(F.col("docid").alias("id"), "contents").write.json(
-                    f"{self.output_path}/jsonl", mode="overwrite"
+                docs.select("date", F.col("docid").alias("id"), "contents")
+                .where(F.col("date") == self.date)
+                .drop("date")
+                .write.json(
+                    f"{self.output_path}/jsonl/date={self.date}", mode="overwrite"
                 )
             )
 
@@ -62,19 +64,18 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
 class BM25IndexTask(BashScriptTask, OptionMixin):
     """Create a BM25 index from the input JSONL file."""
 
-    input_path: str = luigi.Parameter(description="Path to the input JSONL file")
-    output_path: str = luigi.Parameter(description="Path to the output index directory")
-
     def requires(self):
         """Define the dependencies for the BM25 index task."""
         return ExportJSONLTask(
             input_path=self.input_path,
-            output_path=f"{self.output_path}/jsonl",
+            output_path=self.output_path,
+            date=self.date,
+            parallelism=self.parallelism,
             sample_size=self.sample_size,
         )
 
     def output(self):
-        return luigi.LocalTarget(f"{self.output_path}/index/_SUCCESS")
+        return luigi.LocalTarget(f"{self.output_path}/index/date={self.date}/_SUCCESS")
 
     def script_text(self) -> str:
         return dedent(
@@ -82,14 +83,14 @@ class BM25IndexTask(BashScriptTask, OptionMixin):
             #!/bin/bash
             python -m pyserini.index.lucene \
                 --collection JsonCollection \
-                --input {self.output_path}/jsonl \
-                --index {self.output_path}/index \
+                --input {self.output_path}/jsonl/date={self.date} \
+                --index {self.output_path}/index/date={self.date} \
                 --generator DefaultLuceneDocumentGenerator \
                 --language fr \
                 --threads {self.parallelism} \
                 --storePositions \
                 --storeDocvectors
-            touch {self.output_path}/index/_SUCCESS
+            touch {self.output().path}
             """
         )
 
@@ -97,38 +98,32 @@ class BM25IndexTask(BashScriptTask, OptionMixin):
 class EvaluateBM25Task(luigi.Task, OptionMixin):
     """Evaluate the BM25 index using the specified queries and qrels."""
 
-    input_path: str = luigi.Parameter(description="Path to the input JSONL file")
-    output_path: str = luigi.Parameter(description="Path to the output index directory")
-
     def requires(self):
         """Define the dependencies for the evaluation task."""
         return BM25IndexTask(
             input_path=self.input_path,
             output_path=self.output_path,
+            date=self.date,
             sample_size=self.sample_size,
             parallelism=self.parallelism,
         )
 
     def output(self):
-        return luigi.LocalTarget(f"{self.output_path}/evaluation/_SUCCESS")
+        return luigi.LocalTarget(
+            f"{self.output_path}/evaluation/date={self.date}/_SUCCESS"
+        )
 
     def run(self):
-        with spark_resource(cores=self.parallelism) as spark:
+        with spark_resource() as spark:
             collection = ParquetCollection(spark, self.input_path)
             queries = prepare_queries(collection).cache()
-            index_path = f"{self.output_path}/index"
-            dates = sorted(
-                [r.date for r in queries.select("date").distinct().collect()]
+            index_path = f"{self.output_path}/index/date={self.date}"
+            subset = queries.filter(F.col("date") == self.date)
+            results = run_search(subset, index_path)
+            res = score_search(results)
+            res.repartition(1).write.parquet(
+                f"{self.output_path}/evaluation/date={self.date}", mode="overwrite"
             )
-            for date in tqdm(dates):
-                subset = queries.filter(F.col("date") == date)
-                results = run_search(subset, index_path)
-                res = score_search(results)
-                res.repartition(1).write.parquet(
-                    f"{self.output_path}/evaluation/date={date}", mode="overwrite"
-                )
-        with open(self.output().path, "w") as f:
-            f.write()
 
 
 @app.command()
@@ -141,17 +136,29 @@ def run_bm25(
     parallelism: int = typer.Option(
         1, help="Number of threads to use for indexing. Default is 1."
     ),
+    workers: int = typer.Option(
+        1, help="Number of workers to use for the evaluation. Default is 1."
+    ),
 ):
     """Run BM25 on the specified index and query file."""
+    with spark_resource() as spark:
+        collection = ParquetCollection(spark, input_path)
+        dates = [
+            row.date for row in collection.qrels.select("date").distinct().collect()
+        ]
+
     luigi.build(
         [
             EvaluateBM25Task(
                 input_path=input_path,
                 output_path=output_path,
+                date=date,
                 sample_size=0.001 if should_sample else 0.0,
                 parallelism=parallelism,
             )
+            for date in dates
         ],
+        workers=workers,
         local_scheduler=True,
         log_level="INFO",
     )

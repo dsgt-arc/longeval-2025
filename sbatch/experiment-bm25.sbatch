@@ -12,7 +12,7 @@ apptainer exec \
     ~/scratch/longeval/app.sif \
     bash << 'EOF'
 set -xeu
-
+hostname
 source ~/scratch/longeval/app/.venv/bin/activate
 
 project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/longeval
@@ -24,5 +24,6 @@ export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
 python -m longeval.experiment.bm25.workflow \
     $project_dir/2025/parquet \
     $project_dir/2025/bm25 \
-    --parallelism $PYSPARK_DRIVER_CORES
+    --parallelism $PYSPARK_DRIVER_CORES \
+    --workers 1
 EOF
