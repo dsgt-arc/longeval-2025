@@ -16,7 +16,7 @@ scratch_dir=$(realpath ~/scratch/longeval)
 
 export PYSPARK_DRIVER_CORES=16
 export PYSPARK_DRIVER_MEMORY=60g
-export SPARK_LOCAL_DIR=$TMPDIR/spark-tmp
+export SPARK_LOCAL_DIR=${TMPDIR}/spark-tmp
 longeval etl parquet \
     $scratch_dir/raw/2025 \
     $project_dir/2025/parquet
