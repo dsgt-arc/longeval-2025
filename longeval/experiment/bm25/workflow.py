@@ -43,7 +43,7 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
     """
 
     def output(self):
-        return luigi.LocalTarget(f"{self.output_path}/jsonl/_SUCCESS")
+        return luigi.LocalTarget(f"{self.output_path}/jsonl/date={self.date}/_SUCCESS")
 
     def run(self):
         with spark_resource() as spark:
@@ -81,12 +81,14 @@ class BM25IndexTask(BashScriptTask, OptionMixin):
         return dedent(
             f"""
             #!/bin/bash
+            mkdir -p {self.output_path}/index/date={self.date}
             python -m pyserini.index.lucene \
                 --collection JsonCollection \
                 --input {self.output_path}/jsonl/date={self.date} \
                 --index {self.output_path}/index/date={self.date} \
                 --generator DefaultLuceneDocumentGenerator \
                 --language fr \
+                --stemmer none \
                 --threads {self.parallelism} \
                 --storePositions \
                 --storeDocvectors
