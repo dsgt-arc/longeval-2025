@@ -16,11 +16,13 @@ import os
 from pyspark.sql.functions import col, array_max, array_position
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-import umap
 from longeval.collection import ParquetCollection
 from pyspark.ml.clustering import DistributedLDAModel
 from pyspark.ml.feature import CountVectorizerModel
 from sklearn.manifold import MDS
+from sklearn.random_projection import GaussianRandomProjection
+from pyspark.sql import functions as F
+
 
 class TrainLDAModel(luigi.Task):
     input_path = luigi.Parameter()
@@ -30,8 +32,15 @@ class TrainLDAModel(luigi.Task):
     def run(self):
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
+
             collection = ParquetCollection(spark, self.input_path)
-            docs = collection.documents.cache()
+            # docs = collection.documents.sample(fraction=0.5, seed=42).cache()
+            docs = (
+                collection.documents
+                .filter(F.col("date") == "2023-02")
+                .sample(fraction=0.3, seed=42)
+                .cache()
+            )
 
             tokenizer = Tokenizer(inputCol="contents", outputCol="words")
             tokenized = tokenizer.transform(docs)
@@ -66,8 +75,16 @@ class RunLDAInference(luigi.Task):
         with spark_resource() as spark:
             lda_model = DistributedLDAModel.load(os.path.join(self.output_path, "lda_model"))
             vector_model = CountVectorizerModel.load(os.path.join(self.output_path, "vector_model"))
+
             collection = ParquetCollection(spark, self.input_path)
-            docs = collection.documents.cache()
+            # docs = collection.documents.sample(fraction=0.5, seed=42).cache()
+            docs = (
+                collection.documents
+                .filter(F.col("date") == "2023-02")
+                .sample(fraction=0.3, seed=94)
+                .cache()
+            )
+
             tokenized = Tokenizer(inputCol="contents", outputCol="words").transform(docs)
             filtered = StopWordsRemover(inputCol="words", outputCol="filtered_words").transform(tokenized)
             vectorized_docs = vector_model.transform(filtered)
@@ -80,12 +97,9 @@ class RunLDAInference(luigi.Task):
             for row in topics.collect():
                 topic_index = row.topic
                 term_indices = row.termIndices
-                terms = [vocab[index] for index in term_indices]  # Map indices to words
+                terms = [vocab[index] for index in term_indices]
                 topic_words[topic_index] = terms
             topic_words_file_path = os.path.join(self.output_path, "topicWords_lda.txt")
-            # with open(topic_words_file_path, 'w') as f:
-            #     for topic, words in topic_words.items():
-            #         f.write(f"Topic {topic}: {', '.join(words)}\n")
             topic_words_df = pd.DataFrame(list(topic_words.items()), columns=["Topic", "Words"])
             topic_words_df.to_csv(topic_words_file_path, index=False)
 
@@ -94,17 +108,17 @@ class RunLDAInference(luigi.Task):
             doc_topic_array = np.vstack(doc_topic_df["topicDistribution"].apply(lambda v: v.toArray()))
             doc_topic_df['highest_topic'] = np.argmax(doc_topic_array, axis=1)
 
-            topic_probabilities_df = pd.DataFrame(doc_topic_array, columns=[f'topic_{i}' for i in range(self.num_topics)])
-            result_df = pd.concat([doc_topic_df[['docid']], doc_topic_df[['highest_topic']], topic_probabilities_df], axis=1)
-            # result_df.to_csv(os.path.join(self.output_path, "docTopicDistribution.csv"), index=False)
+            topic_probabilities_df = pd.DataFrame(doc_topic_array,
+                                                  columns=[f'topic_{i}' for i in range(self.num_topics)])
+            result_df = pd.concat([doc_topic_df[['docid']], doc_topic_df[['highest_topic']], topic_probabilities_df],
+                                  axis=1)
             result_parquet_path = os.path.join(self.output_path, "docTopicDistribution_lda.parquet")
-            result_df_spark = spark.createDataFrame(result_df)  # Convert to Spark DataFrame
+            result_df_spark = spark.createDataFrame(result_df)
             result_df_spark.write.parquet(result_parquet_path)
             print("Inference completed.")
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution_lda.parquet"))
-        # return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution.csv"))
 
 
 class PlotResults(luigi.Task):
@@ -131,19 +145,19 @@ class PlotResults(luigi.Task):
             plt.title('LDA PCA Topic Clusters')
             plt.savefig(os.path.join(self.output_path, 'pca_lda_topics.png'))
 
-            # MDS plot
-            mds = MDS(n_components=2, random_state=42)
-            doc_topic_2d_mds = mds.fit_transform(doc_topic_array)
+            # RP plot
+            rp = GaussianRandomProjection(n_components=2, random_state=42)
+            doc_topic_2d_rp = rp.fit_transform(doc_topic_array)
             plt.figure(figsize=(10, 6))
-            plt.scatter(doc_topic_2d_mds[:, 0], doc_topic_2d_mds[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
+            plt.scatter(doc_topic_2d_rp[:, 0], doc_topic_2d_rp[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
             plt.colorbar(label='Topic')
-            plt.title('LDA MDS Topic Clusters')
-            plt.savefig(os.path.join(self.output_path, 'mds_lda_topics.png'))
+            plt.title('LDA RP Topic Clusters')
+            plt.savefig(os.path.join(self.output_path, 'rp_lda_topics.png'))
 
     def output(self):
         return [
             luigi.LocalTarget(os.path.join(self.output_path, 'pca_lda_topics.png')),
-            luigi.LocalTarget(os.path.join(self.output_path, 'mds_lda_topics.png'))
+            luigi.LocalTarget(os.path.join(self.output_path, 'rp_lda_topics.png'))
         ]
 
 
@@ -157,16 +171,16 @@ class Workflow(luigi.WrapperTask):
 
 
 def main(
-    num_topics: Annotated[
-        int, typer.Argument(help="Number of topics")
-    ] = 20,
-    input_path: Annotated[
-        str, typer.Argument(help="Input root directory")
-    ] = "/mnt/data/longeval",
-    output_path: Annotated[
-        str, typer.Argument(help="Output root directory")
-    ] = "/mnt/data/longeval",
-    scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
+        num_topics: Annotated[
+            int, typer.Argument(help="Number of topics")
+        ] = 20,
+        input_path: Annotated[
+            str, typer.Argument(help="Input root directory")
+        ] = "/mnt/data/longeval",
+        output_path: Annotated[
+            str, typer.Argument(help="Output root directory")
+        ] = "/mnt/data/longeval",
+        scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
     """Convert raw data to parquet"""
 
@@ -178,8 +192,8 @@ def main(
 
     luigi.build(
         [Workflow(
-            num_topics=num_topics, 
-            input_path=input_path, 
+            num_topics=num_topics,
+            input_path=input_path,
             output_path=output_path
         )],
         **kwargs,
