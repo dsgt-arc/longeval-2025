@@ -41,10 +41,12 @@ def get_spark(
     Path(local_dir).mkdir(parents=True, exist_ok=True)
     builder = (
         SparkSession.builder.config("spark.driver.memory", memory)
-        # memory leak in arrow somewhere
+        # Disable Arrow to avoid memory leak
         .config("spark.sql.execution.arrow.pyspark.enabled", "false")
         .config("spark.driver.maxResultSize", "8g")
         .config("spark.local.dir", local_dir)
+        # Disable Hive to prevent classpath errors
+        .config("spark.sql.catalogImplementation", "in-memory")
     )
     for k, v in kwargs.items():
         builder = builder.config(k, v)
