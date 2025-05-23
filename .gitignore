@@ -175,3 +175,4 @@ logs/
 tests/integration/
 *.tar.gz
 .data
+data/

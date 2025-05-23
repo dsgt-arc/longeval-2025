@@ -1,0 +1,15 @@
+data:
+  output_folder: "data/"
+
+parallel:
+  max_concurrency: 8
+  
+reranking: 
+  gpu: True # To use GPU for the reranking or not
+  model_name: "cross-encoder"
+  model_type: "cross-encoder"
+  lang: "fr"
+  batch_size: 25 # GPU Only. Increase that when on PACE and using GPU (or if you have a good GPU card)
+
+
+  
