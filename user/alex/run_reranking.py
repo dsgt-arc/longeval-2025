@@ -10,7 +10,7 @@ from pathlib import Path
 with open("user/alex/reranking-config.yml", "r") as file:
     config_reranker = ConfigBox(yaml.safe_load(file))
 
-ROOTPATHPARQUET = 'data/'
+ROOTPATHPARQUET = config_reranker.data.input_rootfolder
 
 dates = set()
 for f in os.listdir(ROOTPATHPARQUET):
@@ -21,7 +21,8 @@ for f in os.listdir(ROOTPATHPARQUET):
 reranker_model = reranker.Rerank(config_reranker)
     
 for date in list(dates):
-    df = pd.read_parquet(f'data/{date}/').sort_values(by=['qid', 'score'], ascending=[True, False]).reset_index().drop('index', axis=1).head(10000)
+    print(f'Running reranking for dataset: {date} now')
+    df = pd.read_parquet(f'{ROOTPATHPARQUET}/{date}/').sort_values(by=['qid', 'score'], ascending=[True, False]).reset_index().drop('index', axis=1)
    
     result = reranker_model.rerank_stage(data=df)
     # @Anthony, we can also merge them back together optionally, if needed
