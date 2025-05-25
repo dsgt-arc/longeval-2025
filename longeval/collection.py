@@ -180,7 +180,7 @@ class Raw2025TestCollection(Raw2025Collection):
             self.spark.read.json(f"{self.path}/*Test*/Json/*/*", multiLine=True)
             .withColumnRenamed("id", "docid")
             # date is the 2nd to last part of the path e.g. 2022-06_fr
-            .withColumn("date", self._filename_data_udf(F.input_file_name()))
+            .withColumn("date", self._filename_date_document_udf(F.input_file_name()))
             .withColumn("language", F.lit("French"))
             .withColumn("split", F.lit("test"))
         )

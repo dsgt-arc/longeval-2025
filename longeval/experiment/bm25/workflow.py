@@ -57,7 +57,8 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
         """
         window = Window.partitionBy("docid").orderBy(F.desc(F.length("contents")))
         return (
-            df.withColumn("rank", F.row_number().over(window))
+            df.where(F.length("contents") > 50)
+            .withColumn("rank", F.row_number().over(window))
             .where(F.col("rank") == 1)
             .drop("rank")
         )
@@ -66,6 +67,7 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
         with spark_resource() as spark:
             train_collection = ParquetCollection(spark, f"{self.input_path}/train")
             test_collection = ParquetCollection(spark, f"{self.input_path}/test")
+            # deduplicate and set a minimum length on content document to 10 words (or 50 characters)
             docs = (train_collection.documents.union(test_collection.documents)).where(
                 F.col("date") == self.date
             )
@@ -134,7 +136,7 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
                 f"{self.output_path}/retrieval/date={self.date}/_SUCCESS"
             ),
             "retrieval_joined": luigi.LocalTarget(
-                f"{self.output_path}/retrieval_joined/date={self.date}/_SUCCESS"
+                f"{self.scratch_path}/retrieval_joined/date={self.date}/_SUCCESS"
             ),
         }
 
@@ -165,7 +167,7 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
                 .join(queries.select("qid", "query"), on="qid")
                 .repartition(4)
                 .write.parquet(
-                    f"{self.output_path}/retrieval_joined/date={self.date}",
+                    f"{self.scratch_path}/retrieval_joined/date={self.date}",
                     mode="overwrite",
                 )
             )

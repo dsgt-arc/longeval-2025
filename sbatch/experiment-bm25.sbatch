@@ -2,7 +2,7 @@
 #SBATCH -Jlongeval-parquet --account=paceship-dsgt_clef2025
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=24 --mem-per-cpu=6G
 #SBATCH -t600 -qinferno -oReport-%j.out
-#SBATCH --mail-type=END,FAIL --mail-user=acmiyaguchi@gatech.edu
+#SBATCH --mail-type=END,FAIL,SUCCESS --mail-user=acmiyaguchi@gatech.edu
 set -xeu
 
 apptainer exec \

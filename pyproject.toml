@@ -28,7 +28,8 @@ dependencies = [
     "umap-learn",
     "pyserini>=0.22.1",
     "rerankers",
-    "python-box"
+    "python-box",
+    "einops>=0.8.1",
 ]
 
 [project.optional-dependencies]
