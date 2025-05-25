@@ -3,6 +3,7 @@
 #SBATCH --nodes=1 --gres=gpu:V100:1 --cpus-per-task=6 --mem-per-gpu=64G
 #SBATCH --qos=inferno -t240
 #SBATCH --output=Report-%j.out --mail-type=END,FAIL --mail-user=acmiyaguchi@gatech.edu
+#SBATCH --array=0-49%5
 
 set -xeu
 cd ~/scratch/longeval
@@ -27,13 +28,12 @@ export PYSPARK_DRIVER_MEMORY=40g
 export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
 longeval etl embedding \
     $project_dir/2025/parquet/$dataset \
-    $project_dir/2025/embedding/${model_name/\//-}/$dataset \
+    $scratch_dir/2025/embedding/${model_name/\//-}/$dataset \
     --model-name $model_name \
     --cpu-count 6 \
     --batch-size 1 \
-    --num-sample-ids 20 \
-    --sample-id 0
-    # --sample-id $SLURM_ARRAY_TASK_ID
+    --num-sample-ids 50 \
+    --sample-id $SLURM_ARRAY_TASK_ID
 
 # kill the nvidia monitoring job and then parse the output
 kill $nvidia_logs_pid

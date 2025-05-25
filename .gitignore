@@ -178,3 +178,4 @@ tests/integration/
 data/
 
 .scratch
+embed-logs/

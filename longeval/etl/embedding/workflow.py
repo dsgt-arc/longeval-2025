@@ -93,39 +93,6 @@ class ProcessSentenceTransformer(luigi.Task):
             )
 
 
-class Workflow(luigi.WrapperTask):
-    """A dummy workflow with two tasks."""
-
-    input_path = luigi.Parameter()
-    output_path = luigi.Parameter()
-    sample_id = luigi.OptionalIntParameter()
-    num_sample_ids = luigi.IntParameter(default=20)
-    model_name = luigi.Parameter(default="all-MiniLM-L6-v2")
-    cpu_count = luigi.IntParameter(default=8)
-    batch_size = luigi.IntParameter(default=32)
-
-    def requires(self):
-        # either we run a single task or we run all the tasts
-        if self.sample_id is not None:
-            sample_ids = [self.sample_id]
-        else:
-            sample_ids = list(range(self.num_sample_ids))
-
-        tasks = []
-        for sample_id in sample_ids:
-            task = ProcessSentenceTransformer(
-                input_path=self.input_path,
-                output_path=self.output_path,
-                sample_id=sample_id,
-                num_sample_ids=self.num_sample_ids,
-                model_name=self.model_name,
-                cpu_count=self.cpu_count,
-                batch_size=self.batch_size,
-            )
-            tasks.append(task)
-        yield tasks
-
-
 def main(
     input_path: Annotated[str, typer.Argument(help="Input root directory")],
     output_path: Annotated[str, typer.Argument(help="Output root directory")],
@@ -143,17 +110,22 @@ def main(
     else:
         kwargs["local_scheduler"] = True
 
-    luigi.build(
-        [
-            Workflow(
-                input_path=input_path,
-                output_path=output_path,
-                sample_id=sample_id,
-                num_sample_ids=num_sample_ids,
-                model_name=model_name,
-                cpu_count=cpu_count,
-                batch_size=batch_size,
-            )
-        ],
-        **kwargs,
-    )
+    if sample_id is not None:
+        sample_ids = [sample_id]
+    else:
+        sample_ids = list(range(num_sample_ids))
+
+    tasks = []
+    for sample_id in sample_ids:
+        task = ProcessSentenceTransformer(
+            input_path=input_path,
+            output_path=output_path,
+            sample_id=sample_id,
+            num_sample_ids=num_sample_ids,
+            model_name=model_name,
+            cpu_count=cpu_count,
+            batch_size=batch_size,
+        )
+        tasks.append(task)
+
+    luigi.build(tasks, **kwargs)
