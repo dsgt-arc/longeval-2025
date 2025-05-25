@@ -64,15 +64,11 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
 
     def run(self):
         with spark_resource() as spark:
-            # we need train and test collections
-
             docs = (
-                ParquetCollection(spark, f"{self.input_path}/train")
-                .documents.union(
+                ParquetCollection(spark, f"{self.input_path}/train").documents.union(
                     ParquetCollection(spark, f"{self.input_path}/test").documents
                 )
-                .where(F.col("date") == self.date)
-            )
+            ).where(F.col("date") == self.date)
             docs = self._deduplicate(docs)
             if self.sample_size > 0.0:
                 docs = docs.sample(self.sample_size)
