@@ -79,13 +79,22 @@ class Raw2025Collection(RawCollection):
             "This collection does not follow the standard path structure."
         )
 
-    def _filename_data_udf(self, path):
+    def _filename_date_document_udf(self, path):
         def _parse(p):
             parts = Path(p).parts
             # look for a part that looks like `YYYY-MM_fr` or `YYYY-MM_en` in the path
             # easier just to look at the parts and pop according to the conventon
             parts = [part for part in parts if "collection" not in part]
             return parts[-2].split("_")[0]
+
+        return F.udf(_parse)(path)
+
+    def _filename_date_udf(self, path):
+        def _parse(p):
+            parts = Path(p).parts
+            # look for a part that looks like `YYYY-MM_fr` or `YYYY-MM_en` in the path
+            # easier just to look at the parts and pop according to the conventon
+            return parts[-1].split("_")[0]
 
         return F.udf(_parse)(path)
 
@@ -104,7 +113,7 @@ class Raw2025Collection(RawCollection):
             # date is the 2nd to last part of the path e.g. 2022-06_fr
             .withColumn(
                 "date",
-                self._filename_data_udf(F.input_file_name()),
+                self._filename_date_document_udf(F.input_file_name()),
             )
             .withColumn("split", F.lit("train"))
         )
@@ -124,7 +133,7 @@ class Raw2025Collection(RawCollection):
                 sep="\t",
                 schema="qid STRING, query STRING",
             )
-            .withColumn("date", F.split(F.input_file_name(), "_")[0])
+            .withColumn("date", self._filename_date_udf(F.input_file_name()))
             .withColumn("language", F.lit("French"))
             .withColumn("split", F.lit("train"))
         )
@@ -143,7 +152,7 @@ class Raw2025Collection(RawCollection):
             )
             .withColumnRenamed("id", "docid")
             # date is the 2nd to last part of the path e.g. 2022-06_fr
-            .withColumn("date", F.split(F.input_file_name(), "_")[0])
+            .withColumn("date", self._filename_date_udf(F.input_file_name()))
             .withColumn("language", F.lit("French"))
             .withColumn("split", F.lit("train"))
         )
@@ -184,7 +193,7 @@ class Raw2025TestCollection(Raw2025Collection):
                 sep="\t",
                 schema="qid STRING, query STRING",
             )
-            .withColumn("date", F.split(F.input_file_name(), "_")[0])
+            .withColumn("date", self._filename_date_udf(F.input_file_name()))
             .withColumn("language", F.lit("French"))
             .withColumn("split", F.lit("test"))
         )

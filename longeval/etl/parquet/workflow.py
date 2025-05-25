@@ -6,8 +6,6 @@ from longeval.spark import get_spark
 import typer
 from typing_extensions import Annotated
 from longeval.luigi import luigi_kwargs
-from .tokens import TokenTask
-from pathlib import Path
 
 
 class ParquetCollectionTask(luigi.Task):
@@ -49,20 +47,20 @@ class Workflow(luigi.Task):
                 output_path=f"{self.output_path}/test",
             ),
         ]
-        yield [
-            TokenTask(
-                input_path=f"{self.output_path}/train",
-                output_path=(
-                    Path(self.output_path).parent / "tokens" / "train"
-                ).as_posix(),
-            ),
-            TokenTask(
-                input_path=f"{self.output_path}/test",
-                output_path=(
-                    Path(self.output_path).parent / "tokens" / "test"
-                ).as_posix(),
-            ),
-        ]
+        # yield [
+        #     TokenTask(
+        #         input_path=f"{self.output_path}/train",
+        #         output_path=(
+        #             Path(self.output_path).parent / "tokens" / "train"
+        #         ).as_posix(),
+        #     ),
+        #     TokenTask(
+        #         input_path=f"{self.output_path}/test",
+        #         output_path=(
+        #             Path(self.output_path).parent / "tokens" / "test"
+        #         ).as_posix(),
+        #     ),
+        # ]
 
 
 def to_parquet(
