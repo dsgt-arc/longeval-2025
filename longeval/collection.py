@@ -155,6 +155,46 @@ class Raw2025Collection(RawCollection):
         )
 
 
+class Raw2025TestCollection(Raw2025Collection):
+    """A class for reading the 2025 test collection of datasets."""
+
+    @property
+    def documents(self):
+        return (
+            self.spark.read.json(f"{self.path}/*Test*/Json/*/*", multiLine=True)
+            .withColumnRenamed("id", "docid")
+            .withColumn("language", F.lit("French"))
+            # date is the 2nd to last part of the path e.g. 2022-06_fr
+            .withColumn("date", self._filename_data_udf(F.input_file_name()))
+            .withColumn("split", F.lit("test"))
+        )
+
+    @property
+    def queries(self):
+        return self.spark.read.csv(
+            f"{self.path}/*Test*/queries/*",
+            sep="\t",
+            schema="qid STRING, query STRING",
+        ).withColumn("date", F.split(F.input_file_name(), "_")[0])
+
+    @property
+    def qrels(self):
+        raise NotImplementedError(
+            "The qrels property is not implemented for Raw2025TestCollection. "
+            "This collection does not have qrels."
+        )
+
+    def to_parquet(self, path):
+        """Write the collection to parquet format."""
+        # partition by language and date
+        self.documents.write.partitionBy("split", "language", "date").parquet(
+            f"{path}/Documents", mode="overwrite"
+        )
+        self.queries.write.partitionBy("date").parquet(
+            f"{path}/Queries", mode="overwrite"
+        )
+
+
 class ParquetCollection(RawCollection):
     """A class for reading a collection of parquet files."""
 
