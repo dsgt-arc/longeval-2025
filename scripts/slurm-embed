@@ -11,13 +11,14 @@ class ModelName(str, Enum):
     all_MiniLM_L6_v2 = "all-MiniLM-L6-v2"
     modernbert_msmarco = "joe32140/ModernBERT-base-msmarco"
     modernbert_base = "answerdotai/ModernBERT-base"
-    modernbert_embed = "nomic-ai/modernbert-embed"
+    modernbert_embed = "nomic-ai/modernbert-embed-base"
+    nomic_embed = "nomic-ai/nomic-embed-text-v2-moe"
 
 
 def main(
     model_name: Annotated[
         ModelName, typer.Option(help="Model name")
-    ] = ModelName.modernbert_embed,
+    ] = ModelName.nomic_embed,
     dry_run: Annotated[bool, typer.Option(help="Dry run")] = True,
 ):
     """A wrapper script for embedding sbatch scripts.
@@ -34,18 +35,21 @@ def main(
         else "sbatch/slurm-embed-large.sbatch"
     )
     home = Path(os.environ["HOME"])
-    root = home / "shared/longeval/parquet"
+    root = home / "shared/longeval/2025/parquet"
     paths = sorted(
         [
             path.relative_to(root)
             for path in Path(root).glob("**/*")
-            if path.name == "Documents"
+            if "Documents" in path.parts
+            and path.is_dir()
+            and path.name.startswith("date=")
+            and "_temporary" not in path.parts
         ]
     )
     for path in paths:
         cmd = [
             "sbatch",
-            f"--job-name=longeval-embed-{model_name}-{path}",
+            f"--job-name=longeval-embed_{model_name}_{path}",
             f"{Path(__file__).parent.parent}/{sbatch_script}",
             path.as_posix(),
             model_name,

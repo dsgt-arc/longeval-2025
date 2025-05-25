@@ -1,40 +1,14 @@
 import luigi
 import typer
-from pyspark.ml import Pipeline, PipelineModel
+from pyspark.ml import Pipeline
 from pyspark.ml.functions import vector_to_array
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, Window
 from pyspark.sql import functions as F
 from typing_extensions import Annotated
 
 from longeval.spark import spark_resource
 
 from .ml import WrappedSentenceTransformer
-
-
-class SentenceTransformerPipeline(luigi.Task):
-    output_path = luigi.Parameter()
-    model_name = luigi.Parameter(default="all-MiniLM-L6-v2")
-    batch_size = luigi.IntParameter(default=8)
-
-    def output(self):
-        return luigi.LocalTarget(f"{self.output_path}/metadata/_SUCCESS")
-
-    def pipeline(self) -> Pipeline:
-        return Pipeline(
-            stages=[
-                WrappedSentenceTransformer(
-                    input_col="contents",
-                    output_col="embedding",
-                    model_name=self.model_name,
-                    batch_size=self.batch_size,
-                )
-            ]
-        )
-
-    def run(self):
-        with spark_resource() as spark:
-            model = self.pipeline().fit(spark.createDataFrame([[""]], ["text"]))
-            model.write().overwrite().save(f"{self.output_path}")
 
 
 class ProcessSentenceTransformer(luigi.Task):
@@ -58,15 +32,6 @@ class ProcessSentenceTransformer(luigi.Task):
             f"{self.output_path}/data/sample_id={self.sample_id}/_SUCCESS"
         )
 
-    def requires(self):
-        return [
-            SentenceTransformerPipeline(
-                output_path=f"{self.output_path}/model",
-                model_name=self.model_name,
-                batch_size=self.batch_size,
-            )
-        ]
-
     def transform(self, model, df, features) -> DataFrame:
         transformed = model.transform(df)
         for c in features:
@@ -75,6 +40,19 @@ class ProcessSentenceTransformer(luigi.Task):
                 continue
             transformed = transformed.withColumn(c, vector_to_array(F.col(c)))
         return transformed
+
+    def _deduplicate(self, df):
+        """Deduplicate the documents based on docid and date.
+
+        This seems like it might be pretty slow, but thankfully we only have to do this once.
+        """
+        window = Window.partitionBy("docid").orderBy(F.desc(F.length("contents")))
+        return (
+            df.where(F.length("contents") > 50)
+            .withColumn("rank", F.row_number().over(window))
+            .where(F.col("rank") == 1)
+            .drop("rank")
+        )
 
     def run(self):
         kwargs = {
@@ -91,10 +69,19 @@ class ProcessSentenceTransformer(luigi.Task):
                 .where(F.col("sample_id") == self.sample_id)
                 .drop("sample_id")
             )
-            # transform the dataframe and write it to disk
+            pipeline = Pipeline(
+                stages=[
+                    WrappedSentenceTransformer(
+                        input_col="contents",
+                        output_col="embedding",
+                        model_name=self.model_name,
+                        batch_size=self.batch_size,
+                    )
+                ]
+            ).fit(spark.createDataFrame([[""]], ["text"]))
             df = self.transform(
-                PipelineModel.load(f"{self.output_path}/model"),
-                df,
+                pipeline,
+                self._deduplicate(df),
                 self.feature_columns,
             )
             df.printSchema()
@@ -102,7 +89,7 @@ class ProcessSentenceTransformer(luigi.Task):
             (
                 df.repartition(self.num_partitions)
                 .write.mode("overwrite")
-                .parquet(f"{self.output_path}/data/sample_id={self.sample_id}")
+                .parquet(f"{self.output_path}/sample_id={self.sample_id}")
             )
 
 
@@ -122,7 +109,7 @@ class Workflow(luigi.WrapperTask):
         if self.sample_id is not None:
             sample_ids = [self.sample_id]
         else:
-            sample_ids = list(range(self.num_tasks))
+            sample_ids = list(range(self.num_sample_ids))
 
         tasks = []
         for sample_id in sample_ids:
