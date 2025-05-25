@@ -114,11 +114,19 @@ class Raw2025Collection(RawCollection):
         """
         Read the queries from the 2025 datasets. Note that we will read from the
         release_2025_p2 for queries.
+
+        # NOTE: you must download the updated queries from the website and copy them
+        # into release_p2 for this to work.
         """
-        return self.spark.read.csv(
-            f"{self.path}/release_2025_p1/French/queries.txt",
-            sep="\t",
-            schema="qid STRING, query STRING",
+        return (
+            self.spark.read.csv(
+                f"{self.path}/release_2025_p2/French/*/queries/*",
+                sep="\t",
+                schema="qid STRING, query STRING",
+            )
+            .withColumn("date", F.split(F.input_file_name(), "_")[0])
+            .withColumn("language", F.lit("French"))
+            .withColumn("split", F.lit("train"))
         )
 
     @property
@@ -129,17 +137,14 @@ class Raw2025Collection(RawCollection):
         """
         return (
             self.spark.read.csv(
-                f"{self.path}/release_2025_p1/French/*/qrels/*/*.txt",
+                f"{self.path}/release_2025_p2/French/*/qrels/*",
                 sep=" ",
                 schema="qid STRING, rank INT, docid STRING, rel INT",
             )
             .withColumnRenamed("id", "docid")
-            .withColumn("language", F.lit("French"))
             # date is the 2nd to last part of the path e.g. 2022-06_fr
-            .withColumn(
-                "date",
-                self._filename_data_udf(F.input_file_name()),
-            )
+            .withColumn("date", F.split(F.input_file_name(), "_")[0])
+            .withColumn("language", F.lit("French"))
             .withColumn("split", F.lit("train"))
         )
 
@@ -149,7 +154,9 @@ class Raw2025Collection(RawCollection):
         self.documents.write.partitionBy("split", "language", "date").parquet(
             f"{path}/Documents", mode="overwrite"
         )
-        self.queries.write.parquet(f"{path}/Queries", mode="overwrite")
+        self.queries.write.partitionBy("split", "language", "date").parquet(
+            f"{path}/Queries", mode="overwrite"
+        )
         self.qrels.write.partitionBy("split", "language", "date").parquet(
             f"{path}/Qrels", mode="overwrite"
         )
@@ -163,19 +170,24 @@ class Raw2025TestCollection(Raw2025Collection):
         return (
             self.spark.read.json(f"{self.path}/*Test*/Json/*/*", multiLine=True)
             .withColumnRenamed("id", "docid")
-            .withColumn("language", F.lit("French"))
             # date is the 2nd to last part of the path e.g. 2022-06_fr
             .withColumn("date", self._filename_data_udf(F.input_file_name()))
+            .withColumn("language", F.lit("French"))
             .withColumn("split", F.lit("test"))
         )
 
     @property
     def queries(self):
-        return self.spark.read.csv(
-            f"{self.path}/*Test*/queries/*",
-            sep="\t",
-            schema="qid STRING, query STRING",
-        ).withColumn("date", F.split(F.input_file_name(), "_")[0])
+        return (
+            self.spark.read.csv(
+                f"{self.path}/*Test*/queries/*",
+                sep="\t",
+                schema="qid STRING, query STRING",
+            )
+            .withColumn("date", F.split(F.input_file_name(), "_")[0])
+            .withColumn("language", F.lit("French"))
+            .withColumn("split", F.lit("test"))
+        )
 
     @property
     def qrels(self):
@@ -190,7 +202,7 @@ class Raw2025TestCollection(Raw2025Collection):
         self.documents.write.partitionBy("split", "language", "date").parquet(
             f"{path}/Documents", mode="overwrite"
         )
-        self.queries.write.partitionBy("date").parquet(
+        self.queries.write.partitionBy("split", "language", "date").parquet(
             f"{path}/Queries", mode="overwrite"
         )
 

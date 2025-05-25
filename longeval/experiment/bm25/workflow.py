@@ -14,7 +14,7 @@ import typer
 import luigi
 from longeval.spark import spark_resource
 from longeval.collection import ParquetCollection
-from pyspark.sql import functions as F
+from pyspark.sql import functions as F, Window
 from longeval.luigi import BashScriptTask
 from textwrap import dedent
 from .evaluation import prepare_queries, run_search, score_search
@@ -50,17 +50,34 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
     def output(self):
         return luigi.LocalTarget(f"{self.output_path}/jsonl/date={self.date}/_SUCCESS")
 
+    def _deduplicate(self, df):
+        """Deduplicate the documents based on docid and date.
+
+        This seems like it might be pretty slow, but thankfully we only have to do this once.
+        """
+        window = Window.partitionBy("docid").orderBy(F.desc(F.length("contents")))
+        return (
+            df.withColumn("rank", F.row_number().over(window))
+            .where(F.col("rank") == 1)
+            .drop("rank")
+        )
+
     def run(self):
         with spark_resource() as spark:
-            docs = ParquetCollection(spark, self.input_path).documents
+            # we need train and test collections
 
+            docs = (
+                ParquetCollection(spark, f"{self.input_path}/train")
+                .documents.union(
+                    ParquetCollection(spark, f"{self.input_path}/test").documents
+                )
+                .where(F.col("date") == self.date)
+            )
+            docs = self._deduplicate(docs)
             if self.sample_size > 0.0:
                 docs = docs.sample(self.sample_size)
             (
-                docs.select("date", F.col("docid").alias("id"), "contents")
-                .where(F.col("date") == self.date)
-                .drop("date")
-                .write.json(
+                docs.select(F.col("docid").alias("id"), "contents").write.json(
                     f"{self.output_path}/jsonl/date={self.date}", mode="overwrite"
                 )
             )
@@ -180,14 +197,15 @@ def run_bm25(
 ):
     """Run BM25 on the specified index and query file."""
     with spark_resource() as spark:
-        collection = ParquetCollection(spark, input_path)
-        dates = [
-            row.date for row in collection.qrels.select("date").distinct().collect()
-        ]
+        # get dates from the documents
+        documents = ParquetCollection(spark, f"{input_path}/train").documents.union(
+            ParquetCollection(spark, f"{input_path}/test").documents
+        )
+        dates = [row.date for row in documents.select("date").distinct().collect()]
 
     luigi.build(
         [
-            BM25EvaluationTask(
+            BM25RetrievalTask(
                 input_path=input_path,
                 output_path=output_path,
                 scratch_path=scratch_path,
