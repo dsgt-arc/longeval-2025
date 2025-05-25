@@ -17,7 +17,7 @@ from longeval.collection import ParquetCollection
 from pyspark.sql import functions as F, Window
 from longeval.luigi import BashScriptTask
 from textwrap import dedent
-from .evaluation import prepare_queries, run_search, score_search
+from .evaluation import run_search, score_search
 from pathlib import Path
 
 app = typer.Typer()
@@ -133,19 +133,47 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
         )
 
     def output(self):
-        return luigi.LocalTarget(
-            f"{self.output_path}/retrieval/date={self.date}/_SUCCESS"
-        )
+        return {
+            "retrieval": luigi.LocalTarget(
+                f"{self.output_path}/retrieval/date={self.date}/_SUCCESS"
+            ),
+            "retrieval_joined": luigi.LocalTarget(
+                f"{self.output_path}/retrieval_joined/date={self.date}/_SUCCESS"
+            ),
+        }
 
     def run(self):
         with spark_resource() as spark:
             collection = ParquetCollection(spark, self.input_path)
-            queries = prepare_queries(collection).cache()
-            index_path = f"{self.output_path}/index/date={self.date}"
-            subset = queries.filter(F.col("date") == self.date)
-            results = run_search(subset, index_path)
-            results.write.parquet(
-                f"{self.output_path}/retrieval/date={self.date}", mode="overwrite"
+            results = run_search(
+                collection.queries.filter(F.col("date") == self.date),
+                f"{self.output_path}/index/date={self.date}",
+                k=100,
+            )
+            path = f"{self.output_path}/retrieval/date={self.date}"
+            results.write.parquet(path, mode="overwrite")
+            results = spark.read.parquet(path)
+
+            # also write out the joined dataset (qid, query, docid, contents, score)
+            (
+                results.select("qid", "docid", "score")
+                .join(
+                    collection.documents.where(F.col("date") == self.date).select(
+                        "docid", "contents"
+                    ),
+                    on="docid",
+                )
+                .join(
+                    collection.queries.where(F.col("date") == self.date).select(
+                        "qid", "query"
+                    ),
+                    on="qid",
+                )
+                .repartition(4)
+                .write.parquet(
+                    f"{self.output_path}/retrieval_joined/date={self.date}",
+                    mode="overwrite",
+                )
             )
 
 
@@ -198,10 +226,20 @@ def run_bm25(
     """Run BM25 on the specified index and query file."""
     with spark_resource() as spark:
         # get dates from the documents
-        documents = ParquetCollection(spark, f"{input_path}/train").documents.union(
-            ParquetCollection(spark, f"{input_path}/test").documents
-        )
-        dates = [row.date for row in documents.select("date").distinct().collect()]
+        train_dates = [
+            row.date
+            for row in ParquetCollection(spark, f"{input_path}/train")
+            .documents.select("date")
+            .distinct()
+            .collect()
+        ]
+        test_dates = [
+            row.date
+            for row in ParquetCollection(spark, f"{input_path}/test")
+            .documents.select("date")
+            .distinct()
+            .collect()
+        ]
 
     luigi.build(
         [
@@ -213,7 +251,25 @@ def run_bm25(
                 sample_size=0.001 if should_sample else 0.0,
                 parallelism=parallelism,
             )
-            for date in dates
+            for date in train_dates + test_dates
+        ],
+        workers=workers,
+        local_scheduler=True,
+        log_level="INFO",
+    )
+
+    # now let's run the evaluation on just the train dates
+    luigi.build(
+        [
+            BM25EvaluationTask(
+                input_path=input_path,
+                output_path=output_path,
+                scratch_path=scratch_path,
+                date=date,
+                sample_size=0.001 if should_sample else 0.0,
+                parallelism=parallelism,
+            )
+            for date in train_dates
         ],
         workers=workers,
         local_scheduler=True,
