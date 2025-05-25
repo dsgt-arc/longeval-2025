@@ -196,8 +196,8 @@ class BM25EvaluationTask(luigi.Task, OptionMixin):
             results = spark.read.parquet(
                 f"{self.output_path}/retrieval/date={self.date}"
             )
-            # needs qrels
-            res = score_search(results)
+            train_collection = ParquetCollection(spark, f"{self.input_path}/train")
+            res = score_search(results, train_collection.qrels)
             res.repartition(1).write.parquet(
                 f"{self.output_path}/evaluation/date={self.date}", mode="overwrite"
             )
