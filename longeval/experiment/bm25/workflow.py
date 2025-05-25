@@ -64,11 +64,11 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
 
     def run(self):
         with spark_resource() as spark:
-            docs = (
-                ParquetCollection(spark, f"{self.input_path}/train").documents.union(
-                    ParquetCollection(spark, f"{self.input_path}/test").documents
-                )
-            ).where(F.col("date") == self.date)
+            train_collection = ParquetCollection(spark, f"{self.input_path}/train")
+            test_collection = ParquetCollection(spark, f"{self.input_path}/test")
+            docs = (train_collection.documents.union(test_collection.documents)).where(
+                F.col("date") == self.date
+            )
             docs = self._deduplicate(docs)
             if self.sample_size > 0.0:
                 docs = docs.sample(self.sample_size)
@@ -140,9 +140,17 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
 
     def run(self):
         with spark_resource() as spark:
-            collection = ParquetCollection(spark, self.input_path)
+            train_collection = ParquetCollection(spark, f"{self.input_path}/train")
+            test_collection = ParquetCollection(spark, f"{self.input_path}/test")
+            documents = (
+                train_collection.documents.union(test_collection.documents)
+            ).where(F.col("date") == self.date)
+            queries = (train_collection.queries.union(test_collection.queries)).where(
+                F.col("date") == self.date
+            )
+
             results = run_search(
-                collection.queries.filter(F.col("date") == self.date),
+                queries,
                 f"{self.output_path}/index/date={self.date}",
                 k=100,
             )
@@ -153,18 +161,8 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
             # also write out the joined dataset (qid, query, docid, contents, score)
             (
                 results.select("qid", "docid", "score")
-                .join(
-                    collection.documents.where(F.col("date") == self.date).select(
-                        "docid", "contents"
-                    ),
-                    on="docid",
-                )
-                .join(
-                    collection.queries.where(F.col("date") == self.date).select(
-                        "qid", "query"
-                    ),
-                    on="qid",
-                )
+                .join(documents.select("docid", "contents"), on="docid")
+                .join(queries.select("qid", "query"), on="qid")
                 .repartition(4)
                 .write.parquet(
                     f"{self.output_path}/retrieval_joined/date={self.date}",
@@ -198,6 +196,7 @@ class BM25EvaluationTask(luigi.Task, OptionMixin):
             results = spark.read.parquet(
                 f"{self.output_path}/retrieval/date={self.date}"
             )
+            # needs qrels
             res = score_search(results)
             res.repartition(1).write.parquet(
                 f"{self.output_path}/evaluation/date={self.date}", mode="overwrite"
