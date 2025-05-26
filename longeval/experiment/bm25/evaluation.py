@@ -81,7 +81,11 @@ def score_search(
 ):
     # retrieval should have qid, docid, score (higher score is better)
     run_df = (
-        retrieval.join(qrels.select("qid", "docid", "rel"), on="qid", how="left")
+        retrieval.join(
+            qrels.select("qid", "docid", "rel"),
+            on=["qid", "docid"],
+            how="left",
+        )
         .fillna(0)
         .orderBy("qid", "docid", "rel")
     )
