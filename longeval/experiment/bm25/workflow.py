@@ -135,18 +135,15 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
             "retrieval": luigi.LocalTarget(
                 f"{self.output_path}/retrieval/date={self.date}/_SUCCESS"
             ),
-            "retrieval_joined": luigi.LocalTarget(
-                f"{self.scratch_path}/retrieval_joined/date={self.date}/_SUCCESS"
-            ),
+            # "retrieval_joined": luigi.LocalTarget(
+            #     f"{self.scratch_path}/retrieval_joined/date={self.date}/_SUCCESS"
+            # ),
         }
 
     def run(self):
         with spark_resource() as spark:
             train_collection = ParquetCollection(spark, f"{self.input_path}/train")
             test_collection = ParquetCollection(spark, f"{self.input_path}/test")
-            documents = (
-                train_collection.documents.union(test_collection.documents)
-            ).where(F.col("date") == self.date)
             queries = (train_collection.queries.union(test_collection.queries)).where(
                 F.col("date") == self.date
             )
@@ -160,17 +157,20 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
             results.write.parquet(path, mode="overwrite")
             results = spark.read.parquet(path)
 
-            # also write out the joined dataset (qid, query, docid, contents, score)
-            (
-                results.select("qid", "docid", "score")
-                .join(documents.select("docid", "contents"), on="docid")
-                .join(queries.select("qid", "query"), on="qid")
-                .repartition(4)
-                .write.parquet(
-                    f"{self.scratch_path}/retrieval_joined/date={self.date}",
-                    mode="overwrite",
-                )
-            )
+            # documents = (
+            #     train_collection.documents.union(test_collection.documents)
+            # ).where(F.col("date") == self.date)
+            # # also write out the joined dataset (qid, query, docid, contents, score)
+            # (
+            #     results.select("qid", "docid", "score")
+            #     .join(documents.select("docid", "contents"), on="docid")
+            #     .join(queries.select("qid", "query"), on="qid")
+            #     .repartition(4)
+            #     .write.parquet(
+            #         f"{self.scratch_path}/retrieval_joined/date={self.date}",
+            #         mode="overwrite",
+            #     )
+            # )
 
 
 class BM25EvaluationTask(luigi.Task, OptionMixin):
@@ -219,24 +219,47 @@ def run_bm25(
     workers: int = typer.Option(
         1, help="Number of workers to use for the evaluation. Default is 1."
     ),
+    num_sample_ids: int = typer.Option(
+        -1, help="Number of smaller jobs to split the collection into."
+    ),
+    sample_id: int = typer.Option(
+        -1, help="Sample ID to use for the collection. Default is 0."
+    ),
 ):
     """Run BM25 on the specified index and query file."""
     with spark_resource() as spark:
         # get dates from the documents
-        train_dates = [
-            row.date
-            for row in ParquetCollection(spark, f"{input_path}/train")
-            .documents.select("date")
-            .distinct()
-            .collect()
-        ]
-        test_dates = [
-            row.date
-            for row in ParquetCollection(spark, f"{input_path}/test")
-            .documents.select("date")
-            .distinct()
-            .collect()
-        ]
+        train_dates = sorted(
+            [
+                row.date
+                for row in ParquetCollection(spark, f"{input_path}/train")
+                .documents.select("date")
+                .distinct()
+                .collect()
+            ]
+        )
+        test_dates = sorted(
+            [
+                row.date
+                for row in ParquetCollection(spark, f"{input_path}/test")
+                .documents.select("date")
+                .distinct()
+                .collect()
+            ]
+        )
+
+    if num_sample_ids > 0 and sample_id > 0:
+        # we batch up the dates so we can run this in parallel
+        old_train_dates = train_dates.copy()
+        old_test_dates = test_dates.copy()
+        train_dates = []
+        test_dates = []
+        for i, date in enumerate(old_train_dates + old_test_dates):
+            if i % num_sample_ids == sample_id:
+                if date in old_train_dates:
+                    train_dates.append(date)
+                else:
+                    test_dates.append(date)
 
     luigi.build(
         [
