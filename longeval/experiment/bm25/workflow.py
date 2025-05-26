@@ -47,6 +47,8 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
     https://github.com/castorini/pyserini/blob/master/docs/usage-index.md#building-a-bm25-index-direct-java-implementation
     """
 
+    resources = {"max_workers": 1}
+
     def output(self):
         return luigi.LocalTarget(f"{self.output_path}/jsonl/date={self.date}/_SUCCESS")
 
@@ -84,6 +86,8 @@ class ExportJSONLTask(luigi.Task, OptionMixin):
 class BM25IndexTask(BashScriptTask, OptionMixin):
     """Create a BM25 index from the input JSONL file."""
 
+    resources = {"max_workers": 1}
+
     def requires(self):
         """Define the dependencies for the BM25 index task."""
         return ExportJSONLTask(
@@ -116,8 +120,15 @@ class BM25IndexTask(BashScriptTask, OptionMixin):
         )
 
 
-class BM25RetrievalTask(luigi.Task, OptionMixin):
+class BM25RetrievalPartialTask(luigi.Task, OptionMixin):
     """Query the BM25 index using the specified queries and qrels."""
+
+    num_sample_ids: int = luigi.IntParameter(
+        description="Number of smaller jobs to split the collection into.",
+    )
+    sample_id: int = luigi.IntParameter(
+        description="Sample ID to use for the collection. Default is 0.",
+    )
 
     def requires(self):
         """Define the dependencies for the evaluation task."""
@@ -131,61 +142,68 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
         )
 
     def output(self):
+        path = (
+            f"{self.output_path}/retrieval/date={self.date}/sample_id={self.sample_id}"
+        )
         return {
-            "retrieval": luigi.LocalTarget(
-                f"{self.output_path}/retrieval/date={self.date}/_SUCCESS"
-            ),
-            # "retrieval_joined": luigi.LocalTarget(
-            #     f"{self.scratch_path}/retrieval_joined/date={self.date}/_SUCCESS"
-            # ),
+            "retrieval": luigi.LocalTarget(f"{path}/_SUCCESS"),
         }
 
     def run(self):
-        with spark_resource() as spark:
+        with spark_resource(app_name=f"longeval-{self.date}-{self.sample_id}") as spark:
             train_collection = ParquetCollection(spark, f"{self.input_path}/train")
             test_collection = ParquetCollection(spark, f"{self.input_path}/test")
             queries = (train_collection.queries.union(test_collection.queries)).where(
                 F.col("date") == self.date
             )
-
+            queries = queries.where(
+                F.crc32(F.col("qid")) % self.num_sample_ids == self.sample_id
+            )
             results = run_search(
                 queries,
                 f"{self.output_path}/index/date={self.date}",
                 k=100,
             )
-            path = f"{self.output_path}/retrieval/date={self.date}"
-            results.write.parquet(path, mode="overwrite")
-            results = spark.read.parquet(path)
+            path = f"{self.output_path}/retrieval/date={self.date}/sample_id={self.sample_id}"
+            results.coalesce(1).write.parquet(path, mode="overwrite")
 
-            # documents = (
-            #     train_collection.documents.union(test_collection.documents)
-            # ).where(F.col("date") == self.date)
-            # # also write out the joined dataset (qid, query, docid, contents, score)
-            # (
-            #     results.select("qid", "docid", "score")
-            #     .join(documents.select("docid", "contents"), on="docid")
-            #     .join(queries.select("qid", "query"), on="qid")
-            #     .repartition(4)
-            #     .write.parquet(
-            #         f"{self.scratch_path}/retrieval_joined/date={self.date}",
-            #         mode="overwrite",
-            #     )
-            # )
+
+class BM25RetrievalTask(luigi.Task, OptionMixin):
+    """Query the BM25 index using the specified queries and qrels."""
+
+    num_sample_ids: int = luigi.IntParameter(
+        default=20,
+        description="Number of smaller jobs to split the collection into.",
+    )
+
+    def output(self):
+        return [
+            luigi.LocalTarget(
+                f"{self.output_path}/retrieval/date={self.date}/sample_id={i}/_SUCCESS"
+            )
+            for i in range(self.num_sample_ids)
+        ]
+
+    def run(self):
+        tasks = []
+        for i in range(self.num_sample_ids):
+            tasks.append(
+                BM25RetrievalPartialTask(
+                    input_path=self.input_path,
+                    output_path=self.output_path,
+                    scratch_path=self.scratch_path,
+                    date=self.date,
+                    sample_size=self.sample_size,
+                    parallelism=self.parallelism,
+                    num_sample_ids=self.num_sample_ids,
+                    sample_id=i,
+                )
+            )
+        yield tasks
 
 
 class BM25EvaluationTask(luigi.Task, OptionMixin):
     """Evaluate the BM25 index using the specified queries and qrels."""
-
-    def requires(self):
-        """Define the dependencies for the evaluation task."""
-        return BM25RetrievalTask(
-            input_path=self.input_path,
-            output_path=self.output_path,
-            scratch_path=self.scratch_path,
-            date=self.date,
-            sample_size=self.sample_size,
-            parallelism=self.parallelism,
-        )
 
     def output(self):
         return luigi.LocalTarget(
@@ -248,7 +266,7 @@ def run_bm25(
             ]
         )
 
-    if num_sample_ids > 0 and sample_id > 0:
+    if num_sample_ids > 0 and sample_id >= 0:
         # we batch up the dates so we can run this in parallel
         old_train_dates = train_dates.copy()
         old_test_dates = test_dates.copy()
@@ -261,7 +279,7 @@ def run_bm25(
                 else:
                     test_dates.append(date)
 
-    luigi.build(
+    res = luigi.build(
         [
             BM25RetrievalTask(
                 input_path=input_path,
@@ -277,9 +295,11 @@ def run_bm25(
         local_scheduler=True,
         log_level="INFO",
     )
+    if not res:
+        raise RuntimeError("BM25 retrieval failed. Check the logs for details.")
 
     # now let's run the evaluation on just the train dates
-    luigi.build(
+    res = luigi.build(
         [
             BM25EvaluationTask(
                 input_path=input_path,
@@ -295,7 +315,12 @@ def run_bm25(
         local_scheduler=True,
         log_level="INFO",
     )
+    if not res:
+        raise RuntimeError("BM25 evaluation failed. Check the logs for details.")
 
 
 if __name__ == "__main__":
+    import multiprocessing
+
+    multiprocessing.set_start_method("spawn")
     app()

@@ -49,7 +49,8 @@ def prompt(queries):
 def chat_complete(
     queries,
     api_key=os.environ.get("OPENROUTER_API_KEY"),
-    model="google/gemini-2.5-flash-preview-05-20",
+    model="deepseek/deepseek-chat-v3-0324",
+    # model="google/gemini-2.5-flash-preview-05-20",
     # model="google/gemma-3n-e4b-it:free",
 ):
     completion = requests.post(
@@ -86,7 +87,7 @@ def query_expansion(queries, output):
     end = queries[-1]["qid"]
     output = Path(output) / f"expansion/{start}-{end}.json"
     if output.exists():
-        print(f"Output file {output} already exists, skipping.")
+        # print(f"Output file {output} already exists, skipping.")
         return
     logfile.parent.mkdir(parents=True, exist_ok=True)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -95,12 +96,20 @@ def query_expansion(queries, output):
     with logfile.open("a") as f:
         f.write(json.dumps(resp) + "\n")
 
-    data = json.loads(resp["choices"][0]["message"]["content"])
+    msg = resp["choices"][0]["message"]["content"]
+    try:
+        data = json.loads(msg)
+    except Exception as e:
+        raise ValueError(
+            f"Failed to parse JSON response: {msg}\nError: {e}\nResponse: {resp}"
+        )
     # check that all of the quids are present
     input_qids = {q["qid"] for q in queries}
     output_qids = {d["qid"] for d in data}
     if input_qids != output_qids:
-        raise ValueError("Input and output qids do not match.")
+        raise ValueError(
+            f"Input and output qids do not match. {input_qids - output_qids}", data
+        )
 
     # write the output to a file
     with output.open("w") as f:
@@ -137,6 +146,7 @@ def main():
         try:
             query_expansion(batch, "~/scratch/longeval/query_expansion")
         except Exception as e:
+            print(batch)
             print(
                 f"Error processing batch {idx * batch_size}-{(idx + 1) * batch_size}: {e}"
             )

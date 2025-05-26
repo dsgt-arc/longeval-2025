@@ -3,7 +3,7 @@
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=24 --mem-per-cpu=6G
 #SBATCH -t600 -qinferno -oReport-%j.out
 #SBATCH --mail-type=END,FAIL,SUCCESS --mail-user=acmiyaguchi@gatech.edu
-#SBATCH --array=0-4%5
+#SBATCH --array=0-3%4
 set -xeu
 
 apptainer exec \
@@ -29,7 +29,7 @@ python -m longeval.experiment.bm25.workflow \
     $project_dir/2025/bm25 \
     --scratch-path $scratch_dir/bm25 \
     --parallelism $PYSPARK_DRIVER_CORES \
-    --workers 1 \
-    --num-sample-ids 5 \
+    --workers 12 \
+    --num-sample-ids 4 \
     --sample-id $SLURM_ARRAY_TASK_ID
 EOF
