@@ -10,7 +10,6 @@ class RawCollection:
     def __init__(self, spark, path):
         self.spark = spark
         self.path = path
-        print(f"Path Is {self.path}")
 
     def _filename_udf(self, path):
         return F.udf(lambda p: Path(p).name)(path)
@@ -38,7 +37,6 @@ class RawCollection:
 
     @property
     def queries(self):
-       
         return self.spark.read.csv(
             f"{self.path}/Queries/*.tsv", sep="\t", schema="qid STRING, query STRING"
         )
@@ -166,8 +164,6 @@ class ParquetCollection(RawCollection):
 
     @property
     def queries(self):
-        import os
-        print(os.listdir(f"{self.path}/Queries"))
         return self.spark.read.parquet(f"{self.path}/Queries")
 
     @property
