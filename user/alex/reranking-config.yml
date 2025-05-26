@@ -1,0 +1,16 @@
+data:
+  input_rootfolder: "/storage/scratch1/9/apramov3/longeval/2025/bm25/retrieval_joined/"
+  output_folder: "/storage/scratch1/9/apramov3/longeval/2025/bm25/reranked/"
+
+parallel:
+  max_concurrency: 16
+  
+reranking: 
+  gpu: True # To use GPU for the reranking or not
+  model_name: "cross-encoder"
+  model_type: "cross-encoder"
+  lang: "fr"
+  batch_size: 50 # GPU Only. Increase that when on PACE and using GPU (or if you have a good GPU card)
+
+
+  

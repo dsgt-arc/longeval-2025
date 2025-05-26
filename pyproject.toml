@@ -27,6 +27,8 @@ dependencies = [
     "numba",
     "umap-learn",
     "pyserini>=0.22.1",
+    "rerankers",
+    "python-box"
 ]
 
 [project.optional-dependencies]
