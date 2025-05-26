@@ -18,7 +18,7 @@ def get_searcher(index_path: str) -> LuceneSearcher:
 def _search_worker(qid: str, query: str, index_path: str, k: int) -> dict:
     """Worker function for parallel search. Uses a cached searcher."""
     searcher = get_searcher(index_path)
-    hits = searcher.search(query, k)
+    hits = searcher.search(query, k, remove_dups=True)
     total_hits = len(hits)
     max_score = max(hit.score for hit in hits) if total_hits > 0 else 0.0
     return {
