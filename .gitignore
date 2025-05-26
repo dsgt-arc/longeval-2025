@@ -176,3 +176,5 @@ tests/integration/
 *.tar.gz
 .data
 data/
+
+.scratch
