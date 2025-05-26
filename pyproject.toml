@@ -30,6 +30,7 @@ dependencies = [
     "rerankers",
     "python-box",
     "einops>=0.8.1",
+    "python-dotenv>=1.1.0",
 ]
 
 [project.optional-dependencies]
