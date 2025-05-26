@@ -202,6 +202,45 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
         yield tasks
 
 
+class BM25SubmissionTask(OptionMixin, luigi.Task):
+    def output(self):
+        return luigi.LocalTarget(
+            f"{self.output_path}/bm25_submission/{self.date}/run.txt.gz"
+        )
+
+    def run(self):
+        with spark_resource() as spark:
+            # load the output of the retrieval task
+            results = spark.read.parquet(
+                f"{self.output_path}/retrieval/date={self.date}"
+            )
+            # convert to a submission format
+            submission = (
+                results.select(
+                    "qid",
+                    F.lit("Q0").alias("Q0"),
+                    F.col("docid").alias("docno"),
+                    (
+                        F.row_number()
+                        .over(Window.partitionBy("qid").orderBy(F.desc("score")))
+                        .alias("rank")
+                    ),
+                    "score",
+                    F.lit("dsgt_bm25_submission").alias("tag"),
+                )
+                .orderBy("qid", "rank")
+                .toPandas()
+            )
+            Path(self.output().path).parent.mkdir(parents=True, exist_ok=True)
+            submission.to_csv(
+                self.output().path,
+                sep="\t",
+                index=False,
+                header=False,
+                compression="gzip",
+            )
+
+
 class BM25EvaluationTask(luigi.Task, OptionMixin):
     """Evaluate the BM25 index using the specified queries and qrels."""
 
@@ -310,6 +349,17 @@ def run_bm25(
                 parallelism=parallelism,
             )
             for date in train_dates
+        ]
+        + [
+            BM25SubmissionTask(
+                input_path=input_path,
+                output_path=output_path,
+                scratch_path=scratch_path,
+                date=date,
+                sample_size=0.001 if should_sample else 0.0,
+                parallelism=parallelism,
+            )
+            for date in test_dates
         ],
         workers=workers,
         local_scheduler=True,
