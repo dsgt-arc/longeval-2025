@@ -129,6 +129,18 @@ class BM25RetrievalPartialTask(luigi.Task, OptionMixin):
     sample_id: int = luigi.IntParameter(
         description="Sample ID to use for the collection. Default is 0.",
     )
+    with_expanded_queries: bool = luigi.BoolParameter(
+        default=False,
+        description="Whether to use expanded queries for the retrieval.",
+    )
+    output_prefix: str = luigi.Parameter(
+        default="retrieval",
+        description="Prefix for the output directory.",
+    )
+    expanded_path: str = luigi.Parameter(
+        default="~/scratch/longeval/query_expansion/expansion",
+        description="Path to the expanded queries JSON file.",
+    )
 
     def requires(self):
         """Define the dependencies for the evaluation task."""
@@ -142,9 +154,7 @@ class BM25RetrievalPartialTask(luigi.Task, OptionMixin):
         )
 
     def output(self):
-        path = (
-            f"{self.output_path}/retrieval/date={self.date}/sample_id={self.sample_id}"
-        )
+        path = f"{self.output_path}/{self.output_prefix}/date={self.date}/sample_id={self.sample_id}"
         return {
             "retrieval": luigi.LocalTarget(f"{path}/_SUCCESS"),
         }
@@ -159,12 +169,24 @@ class BM25RetrievalPartialTask(luigi.Task, OptionMixin):
             queries = queries.where(
                 F.crc32(F.col("qid")) % self.num_sample_ids == self.sample_id
             )
+
+            if self.with_expanded_queries:
+                # expanded query location
+                expanded = spark.read.json(
+                    Path(self.expanded_path).expanduser().as_posix(), multiLine=True
+                ).cache()
+                queries = queries.drop("query").join(
+                    expanded,
+                    on=["qid"],
+                    how="left",
+                )
+
             results = run_search(
                 queries,
                 f"{self.output_path}/index/date={self.date}",
                 k=100,
             )
-            path = f"{self.output_path}/retrieval/date={self.date}/sample_id={self.sample_id}"
+            path = Path(self.output()["retrieval"].path).parent.as_posix()
             results.coalesce(1).write.parquet(path, mode="overwrite")
 
 
@@ -175,11 +197,19 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
         default=20,
         description="Number of smaller jobs to split the collection into.",
     )
+    with_expanded_queries: bool = luigi.BoolParameter(
+        default=False,
+        description="Whether to use expanded queries for the retrieval.",
+    )
+    output_prefix: str = luigi.Parameter(
+        default="retrieval",
+        description="Prefix for the output directory.",
+    )
 
     def output(self):
         return [
             luigi.LocalTarget(
-                f"{self.output_path}/retrieval/date={self.date}/sample_id={i}/_SUCCESS"
+                f"{self.output_path}/{self.output_prefix}/date={self.date}/sample_id={i}/_SUCCESS"
             )
             for i in range(self.num_sample_ids)
         ]
@@ -197,22 +227,33 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
                     parallelism=self.parallelism,
                     num_sample_ids=self.num_sample_ids,
                     sample_id=i,
+                    with_expanded_queries=self.with_expanded_queries,
+                    output_prefix=self.output_prefix,
                 )
             )
         yield tasks
 
 
 class BM25SubmissionTask(OptionMixin, luigi.Task):
+    output_prefix: str = luigi.Parameter(
+        default="bm25_submission",
+        description="Prefix for the output directory.",
+    )
+    retrieval_prefix: str = luigi.Parameter(
+        default="retrieval",
+        description="Prefix for the retrieval output directory.",
+    )
+
     def output(self):
         return luigi.LocalTarget(
-            f"{self.output_path}/bm25_submission/{self.date}/run.txt.gz"
+            f"{self.output_path}/{self.output_prefix}/{self.date}/run.txt.gz"
         )
 
     def run(self):
         with spark_resource() as spark:
             # load the output of the retrieval task
             results = spark.read.parquet(
-                f"{self.output_path}/retrieval/date={self.date}"
+                f"{self.output_path}/{self.retrieval_prefix}/date={self.date}"
             )
             # convert to a submission format
             submission = (
@@ -244,21 +285,30 @@ class BM25SubmissionTask(OptionMixin, luigi.Task):
 class BM25EvaluationTask(luigi.Task, OptionMixin):
     """Evaluate the BM25 index using the specified queries and qrels."""
 
+    output_prefix: str = luigi.Parameter(
+        default="evaluation",
+        description="Prefix for the output directory.",
+    )
+    retrieval_prefix: str = luigi.Parameter(
+        default="retrieval",
+        description="Prefix for the retrieval output directory.",
+    )
+
     def output(self):
         return luigi.LocalTarget(
-            f"{self.output_path}/evaluation/date={self.date}/_SUCCESS"
+            f"{self.output_path}/{self.output_prefix}/date={self.date}/_SUCCESS"
         )
 
     def run(self):
         with spark_resource() as spark:
             # load the output of the retrieval task
             results = spark.read.parquet(
-                f"{self.output_path}/retrieval/date={self.date}"
+                f"{self.output_path}/{self.retrieval_prefix}/date={self.date}"
             )
             train_collection = ParquetCollection(spark, f"{self.input_path}/train")
             res = score_search(results, train_collection.qrels)
             res.repartition(1).write.parquet(
-                f"{self.output_path}/evaluation/date={self.date}", mode="overwrite"
+                Path(self.output().path).parent.as_posix(), mode="overwrite"
             )
 
 
@@ -327,7 +377,12 @@ def run_bm25(
                 date=date,
                 sample_size=0.001 if should_sample else 0.0,
                 parallelism=parallelism,
+                with_expanded_queries=with_expanded_queries,
+                output_prefix=(
+                    "retrieval" if not with_expanded_queries else "retrieval_expanded"
+                ),
             )
+            for with_expanded_queries in [False, True]
             for date in train_dates + test_dates
         ],
         workers=workers,
@@ -347,7 +402,14 @@ def run_bm25(
                 date=date,
                 sample_size=0.001 if should_sample else 0.0,
                 parallelism=parallelism,
+                output_prefix=(
+                    "evaluation" if not with_expanded_queries else "evaluation_expanded"
+                ),
+                retrieval_prefix=(
+                    "retrieval" if not with_expanded_queries else "retrieval_expanded"
+                ),
             )
+            for with_expanded_queries in [False, True]
             for date in train_dates
         ]
         + [
@@ -358,7 +420,16 @@ def run_bm25(
                 date=date,
                 sample_size=0.001 if should_sample else 0.0,
                 parallelism=parallelism,
+                output_prefix=(
+                    "bm25_submission"
+                    if not with_expanded_queries
+                    else "bm25_expanded_submission"
+                ),
+                retrieval_prefix=(
+                    "retrieval" if not with_expanded_queries else "retrieval_expanded"
+                ),
             )
+            for with_expanded_queries in [False, True]
             for date in test_dates
         ],
         workers=workers,
