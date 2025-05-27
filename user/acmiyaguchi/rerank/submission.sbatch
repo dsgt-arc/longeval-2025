@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=longeval-rerank --account=paceship-dsgt_clef2025 --qos=inferno
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=8 --mem-per-cpu=4G
-#SBATCH --time=01:00:00  --output=logs/Report-submission-%A_%a.out
+#SBATCH --time=03:00:00  --output=logs/Report-submission-%A_%a.out
 
 set -xeu
 
@@ -18,7 +18,7 @@ from pyspark.sql import functions as F, Window
 shared = Path("~/shared/longeval").expanduser()
 scratch = Path("~/scratch/longeval").expanduser()
 spark = get_spark()
-results = spark.read.csv(f"{scratch}/2025/bm25/reranked", header=True)
+results = spark.read.csv(f"{scratch}/2025/bm25/reranked_v2", header=True)
 results.printSchema()
 results.show(5, truncate=False)
 # over the set of submission dates only
@@ -45,7 +45,7 @@ for date in dates:
         F.lit("dsgt_bm25_rerank_submission").alias("tag"),
     ).orderBy("qid", "rank").toPandas()
     assert submission.shape[0] > 0, "No results found for date: " + date
-    output = shared / f"2025/bm25/bm25_rerank_submission/{date}/run.txt.gz"
+    output = shared / f"2025/bm25/bm25_rerank_submission_v2/{date}/run.txt.gz"
     output.parent.mkdir(parents=True, exist_ok=True)
     submission.to_csv(
         output,

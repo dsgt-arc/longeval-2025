@@ -1,6 +1,6 @@
 data:
   input_rootfolder: "/storage/scratch1/8/amiyaguchi3/longeval/2025/bm25/retrieval_joined"
-  output_folder: "/storage/scratch1/8/amiyaguchi3/longeval/2025/bm25/reranked"
+  output_folder: "/storage/scratch1/8/amiyaguchi3/longeval/2025/bm25/reranked_v2"
 
 parallel:
   max_concurrency: 16
