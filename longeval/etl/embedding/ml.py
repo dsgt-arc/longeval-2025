@@ -91,11 +91,11 @@ class WrappedSentenceTransformer(
         from sentence_transformers import SentenceTransformer
 
         # gpu memory after configuring the model
-        model = SentenceTransformer(self.getModelName())
+        model = SentenceTransformer(self.getModelName(), trust_remote_code=True)
         self._nvidia_smi()
 
         def predict(inputs: np.ndarray) -> np.ndarray:
-            return model.encode(inputs)
+            return model.encode(inputs, show_progress_bar=False)
 
         return predict
 
