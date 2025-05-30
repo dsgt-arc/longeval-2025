@@ -17,7 +17,8 @@ from longeval.collection import ParquetCollection
 from pyspark.sql import functions as F, Window
 from longeval.luigi import BashScriptTask
 from textwrap import dedent
-from .evaluation import run_search, score_search
+from .retrieval import run_search
+from .evaluation import score_search
 from pathlib import Path
 
 app = typer.Typer()
