@@ -4,7 +4,7 @@ version = "0.1.1"
 authors = [{ name = "Anthony Miyaguchi", email = "acmiyaguchi@gatech.edu" }, {name = "Imran Afrulbasha", email = "iafrulbasha3@gatech.edu" }]
 description = "DS@GT LongEval helper package"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "numpy>1.24.4",
     "pandas",
@@ -30,6 +30,7 @@ dependencies = [
     "python-box",
     "einops>=0.8.1",
     "python-dotenv>=1.1.0",
+    "ir-datasets-longeval",
 ]
 
 [project.optional-dependencies]
@@ -39,7 +40,6 @@ dev = [
     "ruff",
     "pre-commit",
     "pytest",
-    "pace-job-monitoring@git+https://github.com/dsgt-kaggle-clef/pace-job-monitoring.git#main"
 ]
 
 [project.urls]
