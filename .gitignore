@@ -157,8 +157,7 @@ cython_debug/
 # Ignore .idea files
 .idea/
 
-# Ignore conf files
-data/longeval/opensearch-v1/
+# Local data and run artifacts
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

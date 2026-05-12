@@ -17,7 +17,6 @@ dependencies = [
     "google-api-python-client",
     "google-auth",
     "google-cloud-storage",
-    "opensearch-py",
     "tiktoken",
     "typer",
     "contexttimer",

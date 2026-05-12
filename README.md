@@ -19,35 +19,23 @@ Refer to [docs](docs/) for more information.
 | Spark    | 3.5.4   |
 | Scala    | 2.12.18   |
 | Python    | 3.11.6   |
-| Java    | 11.0.19   |
+| Java    | 21.x      |
 
 ---
 
-1. If you haven't already, install mvn.
-This might take a while depending on the strength of your internet connection.
-```bash
-brew install maven
-```
-
-2. Install the package into your environment by running these at the root. This will add a command line tool `longeval` to your environment.
+1. Install the package into your environment by running this at the root. This will add a command line tool `longeval` to your environment.
 ```sh
 pip install -e .
-mvn clean install
-# install pyspark connectors
-./scripts/utils/spark-jars.sh
 ```
 
-4. Ensure that you have all the environment variables in `.env.template` populated and run `source ~/.bash_profile` if using that as well.
-- For the password variable, you can check the strength of your password [at this website](https://lowe.github.io/tryzxcvbn/).
-- You can populate the `SPARK_JARS` environment variable with the directory where the `opensearch-spark-30_2.12` library lives
-- For the `SPARK_HOME` environment variable, it can be pointed to the path of the manually downloaded **spark-3.5.4 version without hadoop**. Downloads can be found [here](https://apache.root.lu/spark/spark-3.2.4/).
+2. Configure Spark as needed for your environment.
+- If using a manual Spark install, point `SPARK_HOME` at the Spark distribution.
 
-5. Create virtual environment and activate it
+3. Create virtual environment and activate it
 ```sh
 python -m venv test_env
 source test_env/bin/activate
 ````
-6. Run `docker-compose up` and ensure you can view the OpenSearch Dashboard properly by navigating here: http://localhost:5601/app/home#/
 
 ---
 
@@ -112,18 +100,7 @@ LongEvalTrainCollection
 
 2. Run `longeval etl parquet` to convert the txt files above into a parquet format. Before doing so, make sure to update the parameterized `input_path` and `output_path` luigi variables with the appropriate directory location.
 
-3. Run `longeval etl opensearch` to index the parquet files into Opensearch. Before doing so, make sure to update the parameterized `root` luigi variable with the appropriate directory location.
-
-- If you navigate to the OpenSearch Dashboard on your localhost and click the left menu bar -> Dev Tools, you can enter console queries such as the one below to view the indices available.
-```
-GET _cat/indices?v=true
-```
-- The above etl commands should yield an index named `devlongevaltraincollection-test-parquet`
-- To view the number of entries under that undex you may run
-
-```
-GET devlongevaltraincollection-test-parquet/_count
-```
+3. Run BM25 experiments with Pyserini/Anserini after the parquet conversion. The main workflow lives in `longeval.experiment.bm25.workflow`; see `sbatch/experiment-bm25.sbatch` for a PACE example.
 
 ---
 

@@ -1,13 +1,8 @@
-"""We use pyserini to run BM25 experiments.
+"""Run BM25 experiments with Pyserini/Anserini.
 
-The one downside of opensearch/elasticsearch is that we can't
-run the experiments on PACE, which limits a lot of the interesting
-experimentation we can do. Anserini uses Lucene under the hood,
-which allows us to get some of the same performance as we can get
-in an optimized system like OpenSearch.
-
-Here, we write a bit of code in order to get the appropriate indices
-and to get some basic functionality working.
+Anserini uses Lucene under the hood and runs well in file-based PACE/SLURM
+workflows. This module builds Lucene indices from parquet collections, runs
+retrieval, and writes outputs for evaluation and submissions.
 """
 
 import typer
