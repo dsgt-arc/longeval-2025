@@ -36,11 +36,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pip",
-    "jupyterlab",
     "ruff",
-    "pre-commit",
+    "pre-commit>=4.1.0",
     "pytest",
+]
+notebook = [
+    "jupyterlab>=4.3.6",
+    "ipykernel>=6.29.5",
 ]
 
 [project.urls]
@@ -61,8 +63,11 @@ namespaces = false
 
 [dependency-groups]
 dev = [
-    "ipykernel>=6.29.5",
-    "jupyterlab>=4.3.6",
-    "pip>=25.0.1",
+    "ruff",
     "pre-commit>=4.1.0",
+    "pytest",
+]
+notebook = [
+    "jupyterlab>=4.3.6",
+    "ipykernel>=6.29.5",
 ]

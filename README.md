@@ -6,6 +6,7 @@ Refer to [docs](docs/) for more information.
 # Table of Contents
 
 - [Prerequisites](#prerequisites)
+- [Running Tests](#running-tests)
 - [GCP Development Workflow](#gcp-development-workflow)
 - [LongEval Workflow](#longeval-workflow)
 - [Creating New LongEval Commands](#creating-new-longeval-commands)
@@ -23,19 +24,43 @@ Refer to [docs](docs/) for more information.
 
 ---
 
-1. Install the package into your environment by running this at the root. This will add a command line tool `longeval` to your environment.
-```sh
-pip install -e .
-```
-
-2. Configure Spark as needed for your environment.
-- If using a manual Spark install, point `SPARK_HOME` at the Spark distribution.
-
-3. Create virtual environment and activate it
+1. Create a virtual environment and activate it
 ```sh
 python -m venv test_env
 source test_env/bin/activate
-````
+```
+
+2. Install the package into your environment. This adds the `longeval` CLI.
+```sh
+pip install -e .                    # runtime only
+pip install -e '.[dev]'             # + ruff + pre-commit + pytest
+pip install -e '.[dev,notebook]'    # + jupyterlab + ipykernel
+```
+If you use `uv`, the equivalents are:
+```sh
+uv sync --no-dev                    # runtime only
+uv sync                             # + dev group (tests + lint)
+uv sync --group notebook            # + jupyter
+```
+
+3. Configure Spark as needed for your environment.
+- If using a manual Spark install, point `SPARK_HOME` at the Spark distribution.
+
+---
+
+### Running Tests
+
+Tests live under `tests/` and use `pytest`. Install the `dev` extras
+(see above) and run from the repo root:
+
+```sh
+pytest                              # full suite
+pytest tests/lda_tests/             # one subdir
+pytest -k coherence -v              # filter by name
+```
+
+Spark-based tests boot a local session via `longeval.spark.get_spark`,
+so no external Spark cluster is needed.
 
 ---
 
@@ -98,7 +123,7 @@ LongEvalTrainCollection
                       └─── train.tsv
 ```
 
-2. Run `longeval etl parquet` to convert the txt files above into a parquet format. Before doing so, make sure to update the parameterized `input_path` and `output_path` luigi variables with the appropriate directory location.
+2. Run `longeval etl parquet <raw-input-path> <parquet-output-path>` to convert the per-snapshot JSON/TSV files above into a single parquet collection. Both paths are positional CLI arguments — you do not edit Luigi variables in source.
 
 3. Run BM25 experiments with Pyserini/Anserini after the parquet conversion. The main workflow lives in `longeval.experiment.bm25.workflow`; see `sbatch/experiment-bm25.sbatch` for a PACE example.
 
