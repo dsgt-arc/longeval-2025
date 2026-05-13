@@ -2,13 +2,14 @@ import luigi
 from longeval.collection import RawCollection
 from longeval.spark import spark_resource
 from pathlib import Path
+import pickle
 import typer
 from typing_extensions import Annotated
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col, explode, collect_list, expr
 from pyspark.sql.types import ArrayType, StringType, IntegerType
-from pyspark.ml.feature import Tokenizer, StopWordsRemover, CountVectorizer
+from pyspark.ml.feature import CountVectorizer
 from pyspark.ml.clustering import LDA
 import numpy as np
 import pandas as pd
@@ -24,17 +25,57 @@ from sklearn.random_projection import GaussianRandomProjection
 from pyspark.sql import functions as F
 
 
+# --- worker-side singletons -------------------------------------------------
+# Each Spark Python worker initializes the Lucene analyzer and (lazily) a
+# loaded FrozenPhrases on first call, then reuses them across rows. The JVM
+# inside pyjnius boots once per worker process and is shared by all rows on
+# that worker.
+
+_ANALYZER = None
+_PHRASER = None
+
+
+def _analyze(text):
+    """Lucene-French analyze: lowercase + Snowball stem + French stopwords."""
+    global _ANALYZER
+    if _ANALYZER is None:
+        from pyserini.analysis import Analyzer, get_lucene_analyzer
+
+        _ANALYZER = Analyzer(get_lucene_analyzer(language="fr"))
+    return _ANALYZER.analyze(text or "")
+
+
+def _make_apply_phraser(phraser_path: str):
+    """Build a UDF that joins strong bigrams using a pickled FrozenPhrases."""
+
+    def _apply(tokens):
+        global _PHRASER
+        if _PHRASER is None:
+            with open(phraser_path, "rb") as f:
+                _PHRASER = pickle.load(f)
+        return list(_PHRASER[tokens or []])
+
+    return udf(_apply, ArrayType(StringType()))
+
+
+_analyze_udf = udf(_analyze, ArrayType(StringType()))
+
+
 class TrainLDAModel(luigi.Task):
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
+    phrases_sample_docs = luigi.IntParameter(default=1_000_000)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
 
     def run(self):
+        from gensim.models.phrases import Phrases
+
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
 
             collection = ParquetCollection(spark, self.input_path)
-            # docs = collection.documents.sample(fraction=0.5, seed=42).cache()
             docs = (
                 collection.documents
                 .filter(F.col("date") == "2023-02")
@@ -42,22 +83,50 @@ class TrainLDAModel(luigi.Task):
                 .cache()
             )
 
-            tokenizer = Tokenizer(inputCol="contents", outputCol="words")
-            tokenized = tokenizer.transform(docs)
-            remover = StopWordsRemover(inputCol="words", outputCol="filtered_words")
-            filtered = remover.transform(tokenized)
+            # Step A: Lucene French analyzer (stem + stopwords + lowercase)
+            analyzed = docs.withColumn("tokens", _analyze_udf(F.col("contents"))).cache()
 
-            vectorizer = CountVectorizer(inputCol="filtered_words", outputCol="features")
-            vector_model = vectorizer.fit(filtered)
-            vectorized_docs = vector_model.transform(filtered)
+            # Step B: fit gensim Phrases on a driver-side sample
+            sample = (
+                analyzed.select("tokens")
+                .orderBy(F.rand(seed=42))
+                .limit(self.phrases_sample_docs)
+            )
+            sentences = [row.tokens for row in sample.collect() if row.tokens]
+            phrases = Phrases(
+                sentences,
+                min_count=self.phrases_min_count,
+                threshold=self.phrases_threshold,
+                scoring="npmi",
+            )
+            phraser = phrases.freeze()
+            phraser_path = os.path.join(self.output_path, "phraser.pkl")
+            os.makedirs(self.output_path, exist_ok=True)
+            with open(phraser_path, "wb") as f:
+                pickle.dump(phraser, f)
 
-            lda = LDA(k=self.num_topics, maxIter=10, featuresCol="features", optimizer="em")
+            # Step C: apply phraser to every doc
+            apply_phraser_udf = _make_apply_phraser(phraser_path)
+            phrased = analyzed.withColumn(
+                "tokens_phrased", apply_phraser_udf(F.col("tokens"))
+            )
+
+            # Step D: existing CountVectorizer + LDA on the phrased tokens
+            vectorizer = CountVectorizer(
+                inputCol="tokens_phrased", outputCol="features"
+            )
+            vector_model = vectorizer.fit(phrased)
+            vectorized_docs = vector_model.transform(phrased)
+
+            lda = LDA(
+                k=self.num_topics, maxIter=10, featuresCol="features", optimizer="em"
+            )
             lda_model = lda.fit(vectorized_docs)
 
             lda_model.save(os.path.join(self.output_path, "lda_model"))
             vector_model.save(os.path.join(self.output_path, "vector_model"))
 
-            print("LDA model and vectorizer saved successfully.")
+            print("LDA model, vectorizer, and phraser saved successfully.")
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.output_path, "lda_model"))
@@ -67,17 +136,27 @@ class RunLDAInference(luigi.Task):
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
+    phrases_sample_docs = luigi.IntParameter(default=1_000_000)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
 
     def requires(self):
-        return TrainLDAModel(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics)
+        return TrainLDAModel(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            num_topics=self.num_topics,
+            phrases_sample_docs=self.phrases_sample_docs,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+        )
 
     def run(self):
         with spark_resource() as spark:
             lda_model = DistributedLDAModel.load(os.path.join(self.output_path, "lda_model"))
             vector_model = CountVectorizerModel.load(os.path.join(self.output_path, "vector_model"))
+            phraser_path = os.path.join(self.output_path, "phraser.pkl")
 
             collection = ParquetCollection(spark, self.input_path)
-            # docs = collection.documents.sample(fraction=0.5, seed=42).cache()
             docs = (
                 collection.documents
                 .filter(F.col("date") == "2023-02")
@@ -85,9 +164,12 @@ class RunLDAInference(luigi.Task):
                 .cache()
             )
 
-            tokenized = Tokenizer(inputCol="contents", outputCol="words").transform(docs)
-            filtered = StopWordsRemover(inputCol="words", outputCol="filtered_words").transform(tokenized)
-            vectorized_docs = vector_model.transform(filtered)
+            analyzed = docs.withColumn("tokens", _analyze_udf(F.col("contents")))
+            apply_phraser_udf = _make_apply_phraser(phraser_path)
+            phrased = analyzed.withColumn(
+                "tokens_phrased", apply_phraser_udf(F.col("tokens"))
+            )
+            vectorized_docs = vector_model.transform(phrased)
 
             topics = lda_model.describeTopics(maxTermsPerTopic=100)
             vocab = vector_model.vocabulary

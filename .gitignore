@@ -159,6 +159,11 @@ cython_debug/
 
 # Local data and run artifacts
 
+# .env holds committed project defaults; .env.local stays local
+!.env
+.env.local
+.direnv/
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
