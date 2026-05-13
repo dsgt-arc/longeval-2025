@@ -112,6 +112,7 @@ def fit_phrases(
 def apply_phrases(
     df: DataFrame,
     phrases_df: DataFrame,
+    id_col: str = "docid",
     input_col: str = "tokens",
     output_col: str = "tokens_phrased",
     separator: str = "_",
@@ -128,6 +129,10 @@ def apply_phrases(
     "develop_durabl"]``. CountVectorizer / ``maxDF`` downstream handle any
     double-counting concerns. This trades exact replace-on-match semantics
     for a fully Spark-native pipeline (no Python UDF, no driver collect).
+
+    Caller must supply a stable unique ``id_col`` in ``df`` (default
+    ``docid``); we re-aggregate by it after the explode+join. This avoids
+    the cache-the-DataFrame-to-pin-monotonic-id-assignment pattern.
     """
     bigram_col = "__doc_bigrams"
     df_b = NGram(n=2, inputCol=input_col, outputCol=bigram_col).transform(df)
@@ -137,22 +142,15 @@ def apply_phrases(
         F.concat_ws(separator, "a", "b").alias("phrase_token"),
     )
 
-    # Stable row id so we can re-aggregate after explode+join. `cache()` is
-    # lazy and doesn't guarantee `monotonically_increasing_id()` keeps its
-    # assignment across recomputation — force materialization with an action.
-    row_id = "__row_id"
-    df_id = df_b.withColumn(row_id, F.monotonically_increasing_id()).cache()
-    df_id.count()
-
     matched = (
-        df_id.select(row_id, F.explode(bigram_col).alias("phrase_key"))
+        df_b.select(id_col, F.explode(bigram_col).alias("phrase_key"))
         .join(F.broadcast(keys), on="phrase_key", how="inner")
-        .groupBy(row_id)
+        .groupBy(id_col)
         .agg(F.collect_list("phrase_token").alias("__kept_bigrams"))
     )
 
     return (
-        df_id.join(matched, on=row_id, how="left")
+        df_b.join(matched, on=id_col, how="left")
         .withColumn(
             output_col,
             F.concat(
@@ -163,5 +161,5 @@ def apply_phrases(
                 ),
             ),
         )
-        .drop(row_id, bigram_col, "__kept_bigrams")
+        .drop(bigram_col, "__kept_bigrams")
     )

@@ -88,7 +88,13 @@ def main(
         help="Directory containing Trec/<YYYY-MM>_fr/*.trec.",
     ),
     date: str = typer.Option("2022-06", "--date", help="Snapshot to use, e.g. 2022-06."),
-    limit: int = typer.Option(50_000, "--limit", help="Cap documents loaded."),
+    limit: int = typer.Option(
+        50_000,
+        "--limit",
+        help="Cap documents loaded. Use 0 or negative for the full snapshot. "
+        "Note: .limit() triggers CollectLimit which coalesces to one partition, "
+        "killing parallelism — disabled when limit<=0.",
+    ),
     num_topics: int = typer.Option(10, "--num-topics"),
     max_iter: int = typer.Option(5, "--max-iter"),
     phrases_min_count: int = typer.Option(20, "--phrases-min-count"),
@@ -106,18 +112,22 @@ def main(
     with spark_resource() as spark:
         spark.sparkContext.setLogLevel("WARN")
 
+        from pyspark import StorageLevel
+
         collection = TrecCollection(spark, train_path, dates=[date])
-        docs = collection.documents.limit(limit).cache()
-        n_docs = docs.count()
-        typer.echo(f"loaded {n_docs} docs for date={date}")
+        docs = collection.documents
+        if limit > 0:
+            docs = docs.limit(limit)
 
         typer.echo("analyzing (Lucene FR) + cleaning...")
         analyzed = (
             docs.withColumn("tokens_raw", _analyze_udf(F.col("contents")))
             .withColumn("tokens", _clean_udf(F.col("tokens_raw")))
             .drop("tokens_raw")
-            .cache()
+            .persist(StorageLevel.MEMORY_AND_DISK)
         )
+        n_docs = analyzed.count()
+        typer.echo(f"loaded {n_docs} docs for date={date}")
 
         typer.echo(
             f"mining NPMI bigrams (min_count={phrases_min_count}, "
