@@ -22,7 +22,7 @@ dependencies = [
     "contexttimer",
     "sentence-transformers",
     "gdown",
-    "pytrec_eval",
+    "pytrec_eval_terrier",
     "numba",
     "umap-learn",
     "pyserini>=0.22.1",
