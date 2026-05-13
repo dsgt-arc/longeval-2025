@@ -31,7 +31,7 @@ dependencies = [
     "einops>=0.8.1",
     "python-dotenv>=1.1.0",
     "ir-datasets-longeval",
-    "gensim",
+    "nltk",
 ]
 
 [project.optional-dependencies]

@@ -232,3 +232,47 @@ class ParquetCollection(RawCollection):
         if not (Path(self.path) / "Qrels").exists():
             return None
         return self.spark.read.parquet(f"{self.path}/Qrels")
+
+
+class TrecCollection(RawCollection):
+    """Read LongEval TREC XML files directly into Spark.
+
+    ``path`` is the directory above the ``Trec/<YYYY-MM>_<lang>/`` subtree, e.g.
+    ``.../French/LongEval Train Collection``. Each TREC file holds many
+    ``<DOC>...</DOC>`` blocks; we split on ``</DOC>`` and regex out the
+    DOCNO and TEXT. Avoids materializing a parquet intermediate.
+    """
+
+    def __init__(self, spark, path, dates=None):
+        super().__init__(spark, path)
+        self.dates = dates
+
+    @property
+    def documents(self):
+        if self.dates:
+            globs = [f"{self.path}/Trec/{d}_fr/*.trec" for d in self.dates]
+        else:
+            globs = [f"{self.path}/Trec/*_fr/*.trec"]
+        raw = self.spark.read.text(globs, lineSep="</DOC>", wholetext=False)
+        docno = F.regexp_extract(F.col("value"), r"<DOCNO>([^<]+)</DOCNO>", 1)
+        text = F.regexp_extract(
+            F.col("value"), r"(?s)<TEXT>\s*(.*?)\s*$", 1
+        )
+        date = F.regexp_extract(F.input_file_name(), r"/(\d{4}-\d{2})_fr/", 1)
+        return (
+            raw.select(
+                docno.alias("docid"),
+                text.alias("contents"),
+                date.alias("date"),
+            )
+            .filter(F.col("docid") != "")
+            .filter(F.length("contents") > 0)
+        )
+
+    @property
+    def queries(self):
+        raise NotImplementedError("TrecCollection only exposes documents.")
+
+    @property
+    def qrels(self):
+        raise NotImplementedError("TrecCollection only exposes documents.")
