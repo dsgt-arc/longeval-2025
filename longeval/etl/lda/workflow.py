@@ -23,6 +23,7 @@ from sklearn.manifold import MDS
 from sklearn.random_projection import GaussianRandomProjection
 from pyspark.sql import functions as F
 
+from longeval.etl.lda.coherence import doc_level_npmi_coherence
 from longeval.etl.lda.phrases import apply_phrases, fit_phrases
 
 
@@ -45,10 +46,17 @@ def _analyze(text):
 _analyze_udf = udf(_analyze, ArrayType(StringType()))
 
 
-class TrainLDAModel(luigi.Task):
+class FitLDAPreprocessing(luigi.Task):
+    """K-independent preprocessing: phrases + CountVectorizer.
+
+    Fits ``phrases.parquet`` (NPMI bigram set) and ``vector_model``
+    (CountVectorizer) once for a given (date, seed, threshold) config.
+    Downstream tasks load these artifacts instead of re-fitting per K, so
+    a sweep over K runs preprocessing once total rather than once per K.
+    """
+
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
-    num_topics = luigi.IntParameter()
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
 
@@ -64,7 +72,9 @@ class TrainLDAModel(luigi.Task):
                 .cache()
             )
 
-            analyzed = docs.withColumn("tokens", _analyze_udf(F.col("contents"))).cache()
+            analyzed = docs.withColumn(
+                "tokens", _analyze_udf(F.col("contents"))
+            ).cache()
 
             os.makedirs(self.output_path, exist_ok=True)
             phrases_path = os.path.join(self.output_path, "phrases.parquet")
@@ -83,17 +93,80 @@ class TrainLDAModel(luigi.Task):
                 inputCol="tokens_phrased", outputCol="features"
             )
             vector_model = vectorizer.fit(phrased)
+            vector_model.save(os.path.join(self.output_path, "vector_model"))
+
+            print("Preprocessing artifacts saved (phrases + vector_model).")
+
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.output_path, "vector_model"))
+
+
+class TrainLDAModel(luigi.Task):
+    """Fit one LDA model given precomputed phrases + vector_model.
+
+    Reads the K-independent preprocessing artifacts from
+    ``preprocess_path`` (defaults to ``output_path`` for single-K runs)
+    and writes ``lda_model`` into ``output_path``. In a K sweep,
+    ``preprocess_path`` is a shared root and each K writes its own
+    ``lda_model`` to a per-K subdir.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    num_topics = luigi.IntParameter()
+    preprocess_path = luigi.OptionalParameter(default=None)
+    seed = luigi.IntParameter(default=42)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+
+    def _preprocess_path(self):
+        return self.preprocess_path or self.output_path
+
+    def requires(self):
+        return FitLDAPreprocessing(
+            input_path=self.input_path,
+            output_path=self._preprocess_path(),
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+        )
+
+    def run(self):
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+
+            preprocess = self._preprocess_path()
+            phrases_df = spark.read.parquet(
+                os.path.join(preprocess, "phrases.parquet")
+            )
+            vector_model = CountVectorizerModel.load(
+                os.path.join(preprocess, "vector_model")
+            )
+
+            collection = ParquetCollection(spark, self.input_path)
+            docs = (
+                collection.documents
+                .filter(F.col("date") == "2023-02")
+                .sample(fraction=0.3, seed=42)
+                .cache()
+            )
+            analyzed = docs.withColumn(
+                "tokens", _analyze_udf(F.col("contents"))
+            )
+            phrased = apply_phrases(analyzed, phrases_df)
             vectorized_docs = vector_model.transform(phrased)
 
             lda = LDA(
-                k=self.num_topics, maxIter=10, featuresCol="features", optimizer="em"
+                k=self.num_topics,
+                maxIter=10,
+                featuresCol="features",
+                optimizer="em",
+                seed=self.seed,
             )
             lda_model = lda.fit(vectorized_docs)
 
+            os.makedirs(self.output_path, exist_ok=True)
             lda_model.save(os.path.join(self.output_path, "lda_model"))
-            vector_model.save(os.path.join(self.output_path, "vector_model"))
-
-            print("LDA model, vectorizer, and phrases saved successfully.")
+            print(f"LDA model saved (k={self.num_topics}).")
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.output_path, "lda_model"))
@@ -103,24 +176,30 @@ class RunLDAInference(luigi.Task):
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
+    preprocess_path = luigi.OptionalParameter(default=None)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+
+    def _preprocess_path(self):
+        return self.preprocess_path or self.output_path
 
     def requires(self):
         return TrainLDAModel(
             input_path=self.input_path,
             output_path=self.output_path,
             num_topics=self.num_topics,
+            preprocess_path=self.preprocess_path,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
         )
 
     def run(self):
         with spark_resource() as spark:
+            preprocess = self._preprocess_path()
             lda_model = DistributedLDAModel.load(os.path.join(self.output_path, "lda_model"))
-            vector_model = CountVectorizerModel.load(os.path.join(self.output_path, "vector_model"))
+            vector_model = CountVectorizerModel.load(os.path.join(preprocess, "vector_model"))
             phrases_df = spark.read.parquet(
-                os.path.join(self.output_path, "phrases.parquet")
+                os.path.join(preprocess, "phrases.parquet")
             )
 
             collection = ParquetCollection(spark, self.input_path)
@@ -165,6 +244,118 @@ class RunLDAInference(luigi.Task):
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution_lda.parquet"))
+
+
+class EvaluateLDAModel(luigi.Task):
+    """Doc-level NPMI coherence + topic diversity for one trained LDA model.
+
+    Loads the saved LDA + CountVectorizer, reconstructs the training corpus
+    (same date filter + seed as TrainLDAModel), and scores the top-N words
+    per topic. Output is a single-row parquet so a sweep over K can be
+    concatenated downstream.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    num_topics = luigi.IntParameter()
+    preprocess_path = luigi.OptionalParameter(default=None)
+    top_n = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+
+    def _preprocess_path(self):
+        return self.preprocess_path or self.output_path
+
+    def requires(self):
+        return TrainLDAModel(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            num_topics=self.num_topics,
+            preprocess_path=self.preprocess_path,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+        )
+
+    def _coherence_path(self):
+        return os.path.join(self.output_path, "coherence.parquet")
+
+    def run(self):
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+
+            preprocess = self._preprocess_path()
+            lda_model = DistributedLDAModel.load(
+                os.path.join(self.output_path, "lda_model")
+            )
+            vector_model = CountVectorizerModel.load(
+                os.path.join(preprocess, "vector_model")
+            )
+            phrases_df = spark.read.parquet(
+                os.path.join(preprocess, "phrases.parquet")
+            )
+
+            # Same date filter + seed as TrainLDAModel so coherence is
+            # scored over the docs the model actually fit on.
+            collection = ParquetCollection(spark, self.input_path)
+            docs = (
+                collection.documents
+                .filter(F.col("date") == "2023-02")
+                .sample(fraction=0.3, seed=42)
+            )
+            analyzed = docs.withColumn(
+                "tokens", _analyze_udf(F.col("contents"))
+            )
+            phrased = apply_phrases(analyzed, phrases_df).select(
+                "docid", "tokens_phrased"
+            )
+
+            vocab = vector_model.vocabulary
+            if not vocab:
+                raise ValueError("Empty CountVectorizer vocabulary.")
+            topic_rows = sorted(
+                lda_model.describeTopics(maxTermsPerTopic=self.top_n).collect(),
+                key=lambda r: r.topic,
+            )
+            topic_words = [
+                [vocab[i] for i in row.termIndices] for row in topic_rows
+            ]
+
+            result = doc_level_npmi_coherence(
+                phrased,
+                topic_words=topic_words,
+                tokens_col="tokens_phrased",
+                top_n=self.top_n,
+            )
+
+            row = {
+                "k": int(self.num_topics),
+                "mean_npmi": float(result["mean_npmi"]),
+                "topic_diversity": float(result["topic_diversity"]),
+                "coherence_diversity": float(
+                    result["mean_npmi"] * result["topic_diversity"]
+                ),
+                "n_docs": int(result["n_docs"]),
+                "per_topic_npmi": [float(x) for x in result["per_topic_npmi"]],
+                "top_words": topic_words,
+            }
+            schema = (
+                "k int, mean_npmi double, topic_diversity double, "
+                "coherence_diversity double, n_docs long, "
+                "per_topic_npmi array<double>, top_words array<array<string>>"
+            )
+            (
+                spark.createDataFrame([row], schema)
+                .write.mode("overwrite")
+                .parquet(self._coherence_path())
+            )
+            print(
+                f"k={self.num_topics}: mean_npmi={row['mean_npmi']:.4f}, "
+                f"diversity={row['topic_diversity']:.4f}, "
+                f"coh*div={row['coherence_diversity']:.4f}"
+            )
+
+    def output(self):
+        return luigi.LocalTarget(self._coherence_path())
 
 
 class PlotResults(luigi.Task):
@@ -213,7 +404,47 @@ class Workflow(luigi.WrapperTask):
     num_topics = luigi.IntParameter()
 
     def requires(self):
-        return PlotResults(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics)
+        return [
+            PlotResults(
+                input_path=self.input_path,
+                output_path=self.output_path,
+                num_topics=self.num_topics,
+            ),
+            EvaluateLDAModel(
+                input_path=self.input_path,
+                output_path=self.output_path,
+                num_topics=self.num_topics,
+            ),
+        ]
+
+
+class SweepLDAK(luigi.WrapperTask):
+    """Run TrainLDAModel + EvaluateLDAModel across a list of K values.
+
+    Preprocessing (phrases + CountVectorizer) is shared at
+    ``<output_path>/preprocess/`` so it runs once total, not once per K.
+    Each K's LDA model and coherence parquet live under
+    ``<output_path>/k<K>/`` to avoid collision.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    k_values = luigi.ListParameter()
+
+    def _preprocess_path(self):
+        return os.path.join(self.output_path, "preprocess")
+
+    def requires(self):
+        preprocess = self._preprocess_path()
+        return [
+            EvaluateLDAModel(
+                input_path=self.input_path,
+                output_path=os.path.join(self.output_path, f"k{int(k)}"),
+                num_topics=int(k),
+                preprocess_path=preprocess,
+            )
+            for k in self.k_values
+        ]
 
 
 def main(
@@ -241,6 +472,42 @@ def main(
             num_topics=num_topics,
             input_path=input_path,
             output_path=output_path
+        )],
+        **kwargs,
+    )
+
+
+def sweep_main(
+        k_values: Annotated[
+            str,
+            typer.Argument(
+                help="Comma-separated K values to sweep, e.g. '5,10,20,40,80,160'"
+            ),
+        ] = "5,10,20,40,80,160",
+        input_path: Annotated[
+            str, typer.Argument(help="Input root directory")
+        ] = "/mnt/data/longeval",
+        output_path: Annotated[
+            str, typer.Argument(help="Sweep output root; per-K subdirs created under it")
+        ] = "/mnt/data/longeval/lda-sweep",
+        scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
+):
+    """Train + evaluate an LDA model for each K, writing per-K subdirs."""
+    ks = [int(x) for x in k_values.split(",") if x.strip()]
+    if not ks:
+        raise typer.BadParameter("k_values must contain at least one integer")
+
+    kwargs = {}
+    if scheduler_host:
+        kwargs["scheduler_host"] = scheduler_host
+    else:
+        kwargs["local_scheduler"] = True
+
+    luigi.build(
+        [SweepLDAK(
+            input_path=input_path,
+            output_path=output_path,
+            k_values=ks,
         )],
         **kwargs,
     )
