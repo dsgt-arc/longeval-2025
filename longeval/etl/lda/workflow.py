@@ -47,12 +47,24 @@ _analyze_udf = udf(_analyze, ArrayType(StringType()))
 
 
 class FitLDAPreprocessing(luigi.Task):
-    """K-independent preprocessing: phrases + CountVectorizer.
+    """K-independent preprocessing: materialize the LDA input pipeline.
 
-    Fits ``phrases.parquet`` (NPMI bigram set) and ``vector_model``
-    (CountVectorizer) once for a given (date, seed, threshold) config.
-    Downstream tasks load these artifacts instead of re-fitting per K, so
-    a sweep over K runs preprocessing once total rather than once per K.
+    Runs the expensive corpus transformations exactly once per (date,
+    seed, threshold) config and writes their outputs to disk so every
+    downstream K-specific task can ``spark.read.parquet`` them:
+
+    - ``phrases.parquet``        — NPMI bigram set (driver-loadable).
+    - ``tokens_phrased.parquet`` — analyzed + phrase-augmented tokens
+                                   per ``docid``. Lets coherence and any
+                                   future text-level eval reuse the same
+                                   tokenization the model trained on.
+    - ``vector_model``           — CountVectorizerModel (vocabulary).
+    - ``features.parquet``       — sparse feature vectors per ``docid``,
+                                   ready to feed ``LDA.fit``. K-independent.
+
+    Without this, a 6-K sweep re-runs ``_analyze_udf`` + ``apply_phrases``
+    13× (once per Train and Evaluate task per K). Materialization cuts
+    that to one analyze+phrase pass total.
     """
 
     input_path = luigi.Parameter()
@@ -69,36 +81,74 @@ class FitLDAPreprocessing(luigi.Task):
                 collection.documents
                 .filter(F.col("date") == "2023-02")
                 .sample(fraction=0.3, seed=42)
-                .cache()
             )
-
-            analyzed = docs.withColumn(
-                "tokens", _analyze_udf(F.col("contents"))
+            # `analyzed` is scanned three times: twice by fit_phrases
+            # (unigram + bigram counts) and once by apply_phrases. Cache
+            # it to pay the Lucene analyzer cost exactly once. Project to
+            # just docid + tokens before caching — caching the full
+            # `contents` column would pin ~11GB of raw text in memory
+            # for a 30% sample of 2023-02 that nothing downstream reads.
+            analyzed = docs.select(
+                "docid",
+                _analyze_udf(F.col("contents")).alias("tokens"),
             ).cache()
 
             os.makedirs(self.output_path, exist_ok=True)
             phrases_path = os.path.join(self.output_path, "phrases.parquet")
-            phrases_df = fit_phrases(
-                analyzed,
-                tokens_col="tokens",
-                min_count=self.phrases_min_count,
-                threshold=self.phrases_threshold,
+            phrased_path = os.path.join(self.output_path, "tokens_phrased.parquet")
+            features_path = os.path.join(self.output_path, "features.parquet")
+            try:
+                fit_phrases(
+                    analyzed,
+                    output_path=phrases_path,
+                    tokens_col="tokens",
+                    min_count=self.phrases_min_count,
+                    threshold=self.phrases_threshold,
+                )
+                phrases_df = spark.read.parquet(phrases_path)
+
+                # Materialize phrased tokens once. EvaluateLDAModel will
+                # read this directly instead of re-running apply_phrases.
+                (
+                    apply_phrases(analyzed, phrases_df)
+                    .select("docid", "tokens_phrased")
+                    .write.mode("overwrite")
+                    .parquet(phrased_path)
+                )
+            finally:
+                analyzed.unpersist()
+
+            # Cache phrased across vectorizer.fit + transform so we read
+            # the multi-GB phrased parquet from disk exactly once.
+            phrased = spark.read.parquet(phrased_path).cache()
+            try:
+                vectorizer = CountVectorizer(
+                    inputCol="tokens_phrased", outputCol="features"
+                )
+                vector_model = vectorizer.fit(phrased)
+                vector_model.save(os.path.join(self.output_path, "vector_model"))
+
+                # Materialize features once. TrainLDAModel reads this
+                # directly so the LDA fit for each K sees a sparse-vector
+                # parquet, not a token array.
+                (
+                    vector_model.transform(phrased)
+                    .select("docid", "features")
+                    .write.mode("overwrite")
+                    .parquet(features_path)
+                )
+            finally:
+                phrased.unpersist()
+
+            print(
+                "Preprocessing artifacts saved: phrases, tokens_phrased, "
+                "vector_model, features."
             )
-            phrases_df.write.mode("overwrite").parquet(phrases_path)
-            phrases_df = spark.read.parquet(phrases_path)
-
-            phrased = apply_phrases(analyzed, phrases_df)
-
-            vectorizer = CountVectorizer(
-                inputCol="tokens_phrased", outputCol="features"
-            )
-            vector_model = vectorizer.fit(phrased)
-            vector_model.save(os.path.join(self.output_path, "vector_model"))
-
-            print("Preprocessing artifacts saved (phrases + vector_model).")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.output_path, "vector_model"))
+        # features.parquet is the last artifact written, so its presence
+        # signals all upstream artifacts also succeeded.
+        return luigi.LocalTarget(os.path.join(self.output_path, "features.parquet"))
 
 
 class TrainLDAModel(luigi.Task):
@@ -134,35 +184,23 @@ class TrainLDAModel(luigi.Task):
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
 
-            preprocess = self._preprocess_path()
-            phrases_df = spark.read.parquet(
-                os.path.join(preprocess, "phrases.parquet")
-            )
-            vector_model = CountVectorizerModel.load(
-                os.path.join(preprocess, "vector_model")
-            )
-
-            collection = ParquetCollection(spark, self.input_path)
-            docs = (
-                collection.documents
-                .filter(F.col("date") == "2023-02")
-                .sample(fraction=0.3, seed=42)
-                .cache()
-            )
-            analyzed = docs.withColumn(
-                "tokens", _analyze_udf(F.col("contents"))
-            )
-            phrased = apply_phrases(analyzed, phrases_df)
-            vectorized_docs = vector_model.transform(phrased)
-
-            lda = LDA(
-                k=self.num_topics,
-                maxIter=10,
-                featuresCol="features",
-                optimizer="em",
-                seed=self.seed,
-            )
-            lda_model = lda.fit(vectorized_docs)
+            # Cache features before LDA.fit. EM-LDA iterates maxIter
+            # times over the input; without an external cache, Spark MLlib
+            # would re-read features.parquet on each pass.
+            features = spark.read.parquet(
+                os.path.join(self._preprocess_path(), "features.parquet")
+            ).cache()
+            try:
+                lda = LDA(
+                    k=self.num_topics,
+                    maxIter=10,
+                    featuresCol="features",
+                    optimizer="em",
+                    seed=self.seed,
+                )
+                lda_model = lda.fit(features)
+            finally:
+                features.unpersist()
 
             os.makedirs(self.output_path, exist_ok=True)
             lda_model.save(os.path.join(self.output_path, "lda_model"))
@@ -196,50 +234,68 @@ class RunLDAInference(luigi.Task):
     def run(self):
         with spark_resource() as spark:
             preprocess = self._preprocess_path()
-            lda_model = DistributedLDAModel.load(os.path.join(self.output_path, "lda_model"))
-            vector_model = CountVectorizerModel.load(os.path.join(preprocess, "vector_model"))
-            phrases_df = spark.read.parquet(
-                os.path.join(preprocess, "phrases.parquet")
+            lda_model = DistributedLDAModel.load(
+                os.path.join(self.output_path, "lda_model")
+            )
+            vector_model = CountVectorizerModel.load(
+                os.path.join(preprocess, "vector_model")
+            )
+            # Reuse the materialized features from FitLDAPreprocessing.
+            # Previously this task re-sampled with seed=94, then re-ran
+            # _analyze_udf + apply_phrases + vector_model.transform — work
+            # the preprocessor has already done and written to disk. The
+            # seed=94 sample wasn't truly held-out (same month, 30% draw
+            # from the same population) so dropping it costs nothing
+            # interpretively while saving a full analyze pass.
+            features = spark.read.parquet(
+                os.path.join(preprocess, "features.parquet")
             )
 
-            collection = ParquetCollection(spark, self.input_path)
-            docs = (
-                collection.documents
-                .filter(F.col("date") == "2023-02")
-                .sample(fraction=0.3, seed=94)
-                .cache()
-            )
-
-            analyzed = docs.withColumn("tokens", _analyze_udf(F.col("contents")))
-            phrased = apply_phrases(analyzed, phrases_df)
-            vectorized_docs = vector_model.transform(phrased)
-
-            topics = lda_model.describeTopics(maxTermsPerTopic=100)
             vocab = vector_model.vocabulary
             if not vocab:
-                raise ValueError("Vocabulary is empty. Please check the CountVectorizer step.")
-            topic_words = {}
-            for row in topics.collect():
-                topic_index = row.topic
-                term_indices = row.termIndices
-                terms = [vocab[index] for index in term_indices]
-                topic_words[topic_index] = terms
-            topic_words_file_path = os.path.join(self.output_path, "topicWords_lda.txt")
-            topic_words_df = pd.DataFrame(list(topic_words.items()), columns=["Topic", "Words"])
+                raise ValueError("Empty CountVectorizer vocabulary.")
+            topics = lda_model.describeTopics(maxTermsPerTopic=100)
+            topic_words = {
+                row.topic: [vocab[i] for i in row.termIndices]
+                for row in topics.collect()
+            }
+            topic_words_file_path = os.path.join(
+                self.output_path, "topicWords_lda.txt"
+            )
+            topic_words_df = pd.DataFrame(
+                list(topic_words.items()), columns=["Topic", "Words"]
+            )
             topic_words_df.to_csv(topic_words_file_path, index=False)
 
-            topic_distributions = lda_model.transform(vectorized_docs)
-            doc_topic_df = topic_distributions.select("docid", "topicDistribution").toPandas()
-            doc_topic_array = np.vstack(doc_topic_df["topicDistribution"].apply(lambda v: v.toArray()))
-            doc_topic_df['highest_topic'] = np.argmax(doc_topic_array, axis=1)
+            topic_distributions = lda_model.transform(features)
+            doc_topic_df = topic_distributions.select(
+                "docid", "topicDistribution"
+            ).toPandas()
+            doc_topic_array = np.vstack(
+                doc_topic_df["topicDistribution"].apply(lambda v: v.toArray())
+            )
+            doc_topic_df["highest_topic"] = np.argmax(doc_topic_array, axis=1)
 
-            topic_probabilities_df = pd.DataFrame(doc_topic_array,
-                                                  columns=[f'topic_{i}' for i in range(self.num_topics)])
-            result_df = pd.concat([doc_topic_df[['docid']], doc_topic_df[['highest_topic']], topic_probabilities_df],
-                                  axis=1)
-            result_parquet_path = os.path.join(self.output_path, "docTopicDistribution_lda.parquet")
-            result_df_spark = spark.createDataFrame(result_df)
-            result_df_spark.write.parquet(result_parquet_path)
+            topic_probabilities_df = pd.DataFrame(
+                doc_topic_array,
+                columns=[f"topic_{i}" for i in range(self.num_topics)],
+            )
+            result_df = pd.concat(
+                [
+                    doc_topic_df[["docid"]],
+                    doc_topic_df[["highest_topic"]],
+                    topic_probabilities_df,
+                ],
+                axis=1,
+            )
+            result_parquet_path = os.path.join(
+                self.output_path, "docTopicDistribution_lda.parquet"
+            )
+            (
+                spark.createDataFrame(result_df)
+                .write.mode("overwrite")
+                .parquet(result_parquet_path)
+            )
             print("Inference completed.")
 
     def output(self):
@@ -290,23 +346,11 @@ class EvaluateLDAModel(luigi.Task):
             vector_model = CountVectorizerModel.load(
                 os.path.join(preprocess, "vector_model")
             )
-            phrases_df = spark.read.parquet(
-                os.path.join(preprocess, "phrases.parquet")
-            )
-
-            # Same date filter + seed as TrainLDAModel so coherence is
-            # scored over the docs the model actually fit on.
-            collection = ParquetCollection(spark, self.input_path)
-            docs = (
-                collection.documents
-                .filter(F.col("date") == "2023-02")
-                .sample(fraction=0.3, seed=42)
-            )
-            analyzed = docs.withColumn(
-                "tokens", _analyze_udf(F.col("contents"))
-            )
-            phrased = apply_phrases(analyzed, phrases_df).select(
-                "docid", "tokens_phrased"
+            # Read the phrased tokens FitLDAPreprocessing already
+            # materialized — same corpus the model fit on, no need to
+            # re-run _analyze_udf or apply_phrases per K.
+            phrased = spark.read.parquet(
+                os.path.join(preprocess, "tokens_phrased.parquet")
             )
 
             vocab = vector_model.vocabulary

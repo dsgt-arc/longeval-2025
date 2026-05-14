@@ -88,69 +88,70 @@ def doc_level_npmi_coherence(
         .cache()
     )
 
-    # NPMI probability denominator: *all* docs, including ones with no
-    # topic-word overlap. Counting only the non-empty restricted set would
-    # condition probabilities on "contains a top word", which is a
-    # K-dependent baseline and breaks cross-K comparison.
-    n_docs = restricted.count()
-    if n_docs == 0:
-        restricted.unpersist()
-        return {
-            "mean_npmi": 0.0,
-            "per_topic_npmi": [0.0] * len(topic_words),
-            "topic_diversity": diversity,
-            "n_docs": 0,
-        }
+    try:
+        # NPMI probability denominator: *all* docs, including ones with
+        # no topic-word overlap. Counting only the non-empty restricted
+        # set would condition probabilities on "contains a top word",
+        # which is K-dependent and breaks cross-K comparison.
+        n_docs = restricted.count()
+        if n_docs == 0:
+            return {
+                "mean_npmi": 0.0,
+                "per_topic_npmi": [0.0] * len(topic_words),
+                "topic_diversity": diversity,
+                "n_docs": 0,
+            }
 
-    nonempty = restricted.filter(F.size("v") > 0)
+        nonempty = restricted.filter(F.size("v") > 0)
 
-    unigram_rows = (
-        nonempty.select(F.explode("v").alias("w"))
-        .groupBy("w")
-        .count()
-        .collect()
-    )
-    p_w = {row.w: row["count"] / n_docs for row in unigram_rows}
-
-    pair_schema = ArrayType(
-        StructType(
-            [StructField("a", StringType()), StructField("b", StringType())]
+        unigram_rows = (
+            nonempty.select(F.explode("v").alias("w"))
+            .groupBy("w")
+            .count()
+            .collect()
         )
-    )
+        p_w = {row.w: row["count"] / n_docs for row in unigram_rows}
 
-    @F.udf(pair_schema)
-    def emit_pairs(v):
-        if not v or len(v) < 2:
-            return []
-        pairs = needed_pairs_bc.value
-        out = []
-        for i in range(len(v)):
-            wi = v[i]
-            for j in range(i + 1, len(v)):
-                wj = v[j]
-                # v is array_sort-ed so (wi, wj) is already canonical.
-                if (wi, wj) in pairs:
-                    out.append((wi, wj))
-        return out
+        pair_schema = ArrayType(
+            StructType(
+                [StructField("a", StringType()), StructField("b", StringType())]
+            )
+        )
 
-    pair_rows = (
-        nonempty.select(F.explode(emit_pairs("v")).alias("p"))
-        .select(F.col("p.a").alias("a"), F.col("p.b").alias("b"))
-        .groupBy("a", "b")
-        .count()
-        .collect()
-    )
-    p_ab = {(row.a, row.b): row["count"] / n_docs for row in pair_rows}
+        @F.udf(pair_schema)
+        def emit_pairs(v):
+            if not v or len(v) < 2:
+                return []
+            pairs = needed_pairs_bc.value
+            out = []
+            for i in range(len(v)):
+                wi = v[i]
+                for j in range(i + 1, len(v)):
+                    wj = v[j]
+                    # v is array_sort-ed so (wi, wj) is already canonical.
+                    if (wi, wj) in pairs:
+                        out.append((wi, wj))
+            return out
 
-    restricted.unpersist()
+        pair_rows = (
+            nonempty.select(F.explode(emit_pairs("v")).alias("p"))
+            .select(F.col("p.a").alias("a"), F.col("p.b").alias("b"))
+            .groupBy("a", "b")
+            .count()
+            .collect()
+        )
+        p_ab = {(row.a, row.b): row["count"] / n_docs for row in pair_rows}
 
-    per_topic = [_topic_npmi(words, p_w, p_ab) for words in topic_words]
-    return {
-        "mean_npmi": sum(per_topic) / len(per_topic) if per_topic else 0.0,
-        "per_topic_npmi": per_topic,
-        "topic_diversity": diversity,
-        "n_docs": n_docs,
-    }
+        per_topic = [_topic_npmi(words, p_w, p_ab) for words in topic_words]
+        return {
+            "mean_npmi": sum(per_topic) / len(per_topic) if per_topic else 0.0,
+            "per_topic_npmi": per_topic,
+            "topic_diversity": diversity,
+            "n_docs": n_docs,
+        }
+    finally:
+        restricted.unpersist()
+        needed_pairs_bc.unpersist()
 
 
 def _topic_npmi(words, p_w, p_ab):

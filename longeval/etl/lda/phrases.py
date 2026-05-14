@@ -18,23 +18,31 @@ from pyspark.sql import functions as F
 
 def fit_phrases(
     tokens_df: DataFrame,
+    output_path: str,
+    *,
     tokens_col: str = "tokens",
     min_count: int = 20,
     threshold: float = 0.5,
-) -> DataFrame:
-    """Mine NPMI bigrams over ``tokens_df``.
+) -> None:
+    """Mine NPMI bigrams over ``tokens_df`` and write to ``output_path``.
+
+    Writes a parquet of ``(a, b, npmi, count)`` rows sorted by NPMI
+    descending. Doing the write inside this function lets us bracket
+    the ``unigrams_all`` cache with ``try/finally`` — the cache is
+    needed by both the corpus-total aggregation and the two scoring
+    joins, but Spark would otherwise hold it in memory until the
+    session closes.
 
     Args:
         tokens_df: DataFrame with an ``array<string>`` column of analyzed tokens.
-        tokens_col: Name of that column.
+        output_path: Destination parquet path. Overwritten on each call.
+        tokens_col: Name of the token-array column on ``tokens_df``.
         min_count: Drop unigrams and bigrams seen fewer times than this.
         threshold: Minimum NPMI for a bigram to survive.
-
-    Returns:
-        DataFrame[a string, b string, npmi double, count long] of surviving
-        phrases, sorted by ``npmi`` descending.
     """
     tokens = F.col(tokens_col)
+    spark = tokens_df.sparkSession
+    phrases_schema = "a string, b string, npmi double, count long"
 
     # Count unigrams once, then derive both the corpus token total (used as
     # the NPMI denominator) and a filtered view used only as a join key for
@@ -48,65 +56,68 @@ def fit_phrases(
         .withColumnRenamed("count", "w_count")
         .cache()
     )
-    total_unigrams = unigrams_all.agg(F.sum("w_count")).first()[0] or 0
-    if total_unigrams == 0:
-        return tokens_df.sql_ctx.createDataFrame(
-            [], "a string, b string, npmi double, count long"
-        )
-    unigrams = unigrams_all.filter(F.col("w_count") >= min_count)
+    try:
+        total_unigrams = unigrams_all.agg(F.sum("w_count")).first()[0] or 0
+        if total_unigrams == 0:
+            (
+                spark.createDataFrame([], phrases_schema)
+                .write.mode("overwrite")
+                .parquet(output_path)
+            )
+            return
+        unigrams = unigrams_all.filter(F.col("w_count") >= min_count)
 
-    # Zip tokens with the same array shifted left by one to build (a, b) pairs.
-    # slice(arr, 2, size(arr) - 1) drops the first element; arrays_zip pads
-    # with NULL on the shorter side, which we then drop.
-    n = F.size(tokens)
-    pairs = F.arrays_zip(
-        F.slice(tokens, F.lit(1), n - 1).alias("a"),
-        F.slice(tokens, F.lit(2), n - 1).alias("b"),
-    )
-    bigrams = (
-        tokens_df.filter(n >= 2)
-        .select(F.explode(pairs).alias("p"))
-        .select(F.col("p.a").alias("a"), F.col("p.b").alias("b"))
-        .filter(F.col("a").isNotNull() & F.col("b").isNotNull())
-        .groupBy("a", "b")
-        .count()
-        .withColumnRenamed("count", "ab_count")
-        .filter(F.col("ab_count") >= min_count)
-    )
-    # NPMI's [-1, 1] boundedness requires a consistent denominator. Use the
-    # total unigram count for all three probabilities: a bigram's joint prob
-    # is `ab_count / total_unigrams`, matching the unigram marginals.
-    scored = (
-        bigrams.join(
-            unigrams.withColumnRenamed("w", "a").withColumnRenamed(
-                "w_count", "a_count"
-            ),
-            on="a",
+        # Zip tokens with the same array shifted left by one to build
+        # (a, b) pairs. slice(arr, 2, size(arr) - 1) drops the first
+        # element; arrays_zip pads with NULL on the shorter side, which
+        # we then drop.
+        n = F.size(tokens)
+        pairs = F.arrays_zip(
+            F.slice(tokens, F.lit(1), n - 1).alias("a"),
+            F.slice(tokens, F.lit(2), n - 1).alias("b"),
         )
-        .join(
-            unigrams.withColumnRenamed("w", "b").withColumnRenamed(
-                "w_count", "b_count"
-            ),
-            on="b",
+        bigrams = (
+            tokens_df.filter(n >= 2)
+            .select(F.explode(pairs).alias("p"))
+            .select(F.col("p.a").alias("a"), F.col("p.b").alias("b"))
+            .filter(F.col("a").isNotNull() & F.col("b").isNotNull())
+            .groupBy("a", "b")
+            .count()
+            .withColumnRenamed("count", "ab_count")
+            .filter(F.col("ab_count") >= min_count)
         )
-        .withColumn("p_ab", F.col("ab_count") / F.lit(total_unigrams))
-        .withColumn("p_a", F.col("a_count") / F.lit(total_unigrams))
-        .withColumn("p_b", F.col("b_count") / F.lit(total_unigrams))
-        .withColumn(
-            "npmi",
-            F.log(F.col("p_ab") / (F.col("p_a") * F.col("p_b")))
-            / -F.log(F.col("p_ab")),
+        # NPMI's [-1, 1] boundedness requires a consistent denominator.
+        # Use the total unigram count for all three probabilities: a
+        # bigram's joint prob is ``ab_count / total_unigrams``, matching
+        # the unigram marginals.
+        scored = (
+            bigrams.join(
+                unigrams.withColumnRenamed("w", "a").withColumnRenamed(
+                    "w_count", "a_count"
+                ),
+                on="a",
+            )
+            .join(
+                unigrams.withColumnRenamed("w", "b").withColumnRenamed(
+                    "w_count", "b_count"
+                ),
+                on="b",
+            )
+            .withColumn("p_ab", F.col("ab_count") / F.lit(total_unigrams))
+            .withColumn("p_a", F.col("a_count") / F.lit(total_unigrams))
+            .withColumn("p_b", F.col("b_count") / F.lit(total_unigrams))
+            .withColumn(
+                "npmi",
+                F.log(F.col("p_ab") / (F.col("p_a") * F.col("p_b")))
+                / -F.log(F.col("p_ab")),
+            )
+            .filter(F.col("npmi") >= threshold)
+            .select("a", "b", "npmi", F.col("ab_count").alias("count"))
+            .orderBy(F.col("npmi").desc())
         )
-        .filter(F.col("npmi") >= threshold)
-        .select(
-            "a",
-            "b",
-            "npmi",
-            F.col("ab_count").alias("count"),
-        )
-        .orderBy(F.col("npmi").desc())
-    )
-    return scored
+        scored.write.mode("overwrite").parquet(output_path)
+    finally:
+        unigrams_all.unpersist()
 
 
 def apply_phrases(
