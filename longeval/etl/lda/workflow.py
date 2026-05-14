@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col, explode, collect_list, expr
 from pyspark.sql.types import ArrayType, StringType, IntegerType
-from pyspark.ml.feature import CountVectorizer
+from pyspark.ml.feature import CountVectorizer, StopWordsRemover
 from pyspark.ml.clustering import LDA
 import numpy as np
 import pandas as pd
@@ -27,9 +27,15 @@ from longeval.etl.lda.coherence import doc_level_npmi_coherence
 from longeval.etl.lda.phrases import apply_phrases, fit_phrases
 
 
-# Per-worker Lucene analyzer singleton — JVM via pyjnius boots once per
-# worker process and is shared across all rows on that worker.
+def _build_lucene_fr_analyzer():
+    """Return a fresh Lucene FR analyzer (lowercase + Snowball + FR stops)."""
+    from pyserini.analysis import Analyzer, get_lucene_analyzer
 
+    return Analyzer(get_lucene_analyzer(language="fr"))
+
+
+# Per-worker Lucene analyzer singleton; the JVM via pyjnius boots once per
+# worker process and is reused across all rows on that worker.
 _ANALYZER = None
 
 
@@ -37,13 +43,33 @@ def _analyze(text):
     """Lucene-French analyze: lowercase + Snowball stem + French stopwords."""
     global _ANALYZER
     if _ANALYZER is None:
-        from pyserini.analysis import Analyzer, get_lucene_analyzer
-
-        _ANALYZER = Analyzer(get_lucene_analyzer(language="fr"))
+        _ANALYZER = _build_lucene_fr_analyzer()
     return _ANALYZER.analyze(text or "")
 
 
 _analyze_udf = udf(_analyze, ArrayType(StringType()))
+
+
+def _build_stop_stems() -> list[str]:
+    """NLTK FR+EN stopwords passed through the FR analyzer to match the
+    Snowball stems present in document tokens. Raw forms are unioned in
+    as a fallback for tokens the analyzer leaves untouched.
+    """
+    import nltk
+
+    try:
+        nltk.data.find("corpora/stopwords")
+    except LookupError:
+        nltk.download("stopwords", quiet=True)
+    from nltk.corpus import stopwords
+
+    analyzer = _build_lucene_fr_analyzer()
+    raw = set(stopwords.words("french")) | set(stopwords.words("english"))
+    stems: set[str] = set()
+    for w in raw:
+        stems.update(analyzer.analyze(w))
+    stems |= raw
+    return sorted(stems)
 
 
 class FitLDAPreprocessing(luigi.Task):
@@ -82,16 +108,36 @@ class FitLDAPreprocessing(luigi.Task):
                 .filter(F.col("date") == "2023-02")
                 .sample(fraction=0.3, seed=42)
             )
-            # `analyzed` is scanned three times: twice by fit_phrases
-            # (unigram + bigram counts) and once by apply_phrases. Cache
-            # it to pay the Lucene analyzer cost exactly once. Project to
-            # just docid + tokens before caching — caching the full
-            # `contents` column would pin ~11GB of raw text in memory
-            # for a 30% sample of 2023-02 that nothing downstream reads.
-            analyzed = docs.select(
-                "docid",
-                _analyze_udf(F.col("contents")).alias("tokens"),
-            ).cache()
+            # Cleanup: Lucene FR analyzer -> StopWordsRemover (NLTK FR+EN
+            # stems) -> length/numeric filter. The extra StopWordsRemover
+            # pass exists because the analyzer's built-in FR stops don't
+            # cover English fillers ("the", "and") present in this corpus.
+            remover = StopWordsRemover(
+                inputCol="tokens_raw",
+                outputCol="tokens_no_stop",
+                stopWords=_build_stop_stems(),
+            )
+            # Cache the cleaned token stream: fit_phrases scans it twice
+            # (unigram + bigram counts) and apply_phrases scans it once.
+            # Project to docid + tokens so the full `contents` column
+            # isn't pinned in memory.
+            analyzed = (
+                remover.transform(
+                    docs.select(
+                        "docid",
+                        _analyze_udf(F.col("contents")).alias("tokens_raw"),
+                    )
+                )
+                .withColumn(
+                    "tokens",
+                    F.expr(
+                        "filter(tokens_no_stop, t -> "
+                        "length(t) >= 3 AND NOT (t rlike '^[0-9]+$'))"
+                    ),
+                )
+                .select("docid", "tokens")
+                .cache()
+            )
 
             os.makedirs(self.output_path, exist_ok=True)
             phrases_path = os.path.join(self.output_path, "phrases.parquet")
@@ -122,8 +168,17 @@ class FitLDAPreprocessing(luigi.Task):
             # the multi-GB phrased parquet from disk exactly once.
             phrased = spark.read.parquet(phrased_path).cache()
             try:
+                # min_df/max_df/vocab_size are the standard knobs for
+                # auto-pruning the LDA vocabulary: drop terms that are
+                # too rare (likely noise) or too common (likely fillers
+                # the stopword list missed), and cap total vocab so the
+                # feature matrix stays tractable.
                 vectorizer = CountVectorizer(
-                    inputCol="tokens_phrased", outputCol="features"
+                    inputCol="tokens_phrased",
+                    outputCol="features",
+                    minDF=50.0,
+                    maxDF=0.2,
+                    vocabSize=20_000,
                 )
                 vector_model = vectorizer.fit(phrased)
                 vector_model.save(os.path.join(self.output_path, "vector_model"))
