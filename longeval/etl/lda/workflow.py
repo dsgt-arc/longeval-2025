@@ -95,6 +95,11 @@ class FitLDAPreprocessing(luigi.Task):
 
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
 
@@ -105,8 +110,8 @@ class FitLDAPreprocessing(luigi.Task):
             collection = ParquetCollection(spark, self.input_path)
             docs = (
                 collection.documents
-                .filter(F.col("date") == "2023-02")
-                .sample(fraction=0.3, seed=42)
+                .filter(F.col("date") == self.date)
+                .sample(fraction=self.sample_fraction, seed=42)
             )
             # Cleanup: Lucene FR analyzer -> StopWordsRemover (NLTK FR+EN
             # stems) -> length/numeric filter. The extra StopWordsRemover
@@ -176,9 +181,9 @@ class FitLDAPreprocessing(luigi.Task):
                 vectorizer = CountVectorizer(
                     inputCol="tokens_phrased",
                     outputCol="features",
-                    minDF=50.0,
-                    maxDF=0.2,
-                    vocabSize=20_000,
+                    minDF=float(self.min_df),
+                    maxDF=float(self.max_df),
+                    vocabSize=int(self.vocab_size),
                 )
                 vector_model = vectorizer.fit(phrased)
                 vector_model.save(os.path.join(self.output_path, "vector_model"))
@@ -220,6 +225,11 @@ class TrainLDAModel(luigi.Task):
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
     preprocess_path = luigi.OptionalParameter(default=None)
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
     seed = luigi.IntParameter(default=42)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
@@ -231,6 +241,11 @@ class TrainLDAModel(luigi.Task):
         return FitLDAPreprocessing(
             input_path=self.input_path,
             output_path=self._preprocess_path(),
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
         )
@@ -270,6 +285,11 @@ class RunLDAInference(luigi.Task):
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
     preprocess_path = luigi.OptionalParameter(default=None)
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
 
@@ -282,6 +302,11 @@ class RunLDAInference(luigi.Task):
             output_path=self.output_path,
             num_topics=self.num_topics,
             preprocess_path=self.preprocess_path,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
         )
@@ -370,6 +395,11 @@ class EvaluateLDAModel(luigi.Task):
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
     preprocess_path = luigi.OptionalParameter(default=None)
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
     top_n = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
@@ -383,6 +413,11 @@ class EvaluateLDAModel(luigi.Task):
             output_path=self.output_path,
             num_topics=self.num_topics,
             preprocess_path=self.preprocess_path,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
         )
@@ -461,9 +496,23 @@ class PlotResults(luigi.Task):
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
 
     def requires(self):
-        return RunLDAInference(input_path=self.input_path, output_path=self.output_path, num_topics=self.num_topics)
+        return RunLDAInference(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            num_topics=self.num_topics,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
+        )
 
     def run(self):
         with spark_resource() as spark:
@@ -501,20 +550,24 @@ class Workflow(luigi.WrapperTask):
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
 
     def requires(self):
-        return [
-            PlotResults(
-                input_path=self.input_path,
-                output_path=self.output_path,
-                num_topics=self.num_topics,
-            ),
-            EvaluateLDAModel(
-                input_path=self.input_path,
-                output_path=self.output_path,
-                num_topics=self.num_topics,
-            ),
-        ]
+        kwargs = dict(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            num_topics=self.num_topics,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
+        )
+        return [PlotResults(**kwargs), EvaluateLDAModel(**kwargs)]
 
 
 class SweepLDAK(luigi.WrapperTask):
@@ -529,6 +582,11 @@ class SweepLDAK(luigi.WrapperTask):
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     k_values = luigi.ListParameter()
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
 
     def _preprocess_path(self):
         return os.path.join(self.output_path, "preprocess")
@@ -541,6 +599,11 @@ class SweepLDAK(luigi.WrapperTask):
                 output_path=os.path.join(self.output_path, f"k{int(k)}"),
                 num_topics=int(k),
                 preprocess_path=preprocess,
+                date=self.date,
+                sample_fraction=self.sample_fraction,
+                min_df=self.min_df,
+                max_df=self.max_df,
+                vocab_size=self.vocab_size,
             )
             for k in self.k_values
         ]
@@ -556,9 +619,24 @@ def main(
         output_path: Annotated[
             str, typer.Argument(help="Output root directory")
         ] = "/mnt/data/longeval",
+        date: Annotated[
+            str, typer.Option(help="Snapshot date, e.g. 2022-06 or 2023-02")
+        ] = "2023-02",
+        sample_fraction: Annotated[
+            float, typer.Option(help="Document sampling fraction")
+        ] = 0.3,
+        min_df: Annotated[
+            float, typer.Option(help="CountVectorizer minDF (absolute count or fraction)")
+        ] = 50.0,
+        max_df: Annotated[
+            float, typer.Option(help="CountVectorizer maxDF (absolute count or fraction)")
+        ] = 0.2,
+        vocab_size: Annotated[
+            int, typer.Option(help="CountVectorizer vocabSize cap")
+        ] = 20_000,
         scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
-    """Convert raw data to parquet"""
+    """Train + evaluate one LDA model for the given K."""
 
     kwargs = {}
     if scheduler_host:
@@ -570,7 +648,12 @@ def main(
         [Workflow(
             num_topics=num_topics,
             input_path=input_path,
-            output_path=output_path
+            output_path=output_path,
+            date=date,
+            sample_fraction=sample_fraction,
+            min_df=min_df,
+            max_df=max_df,
+            vocab_size=vocab_size,
         )],
         **kwargs,
     )
@@ -589,6 +672,21 @@ def sweep_main(
         output_path: Annotated[
             str, typer.Argument(help="Sweep output root; per-K subdirs created under it")
         ] = "/mnt/data/longeval/lda-sweep",
+        date: Annotated[
+            str, typer.Option(help="Snapshot date, e.g. 2022-06 or 2023-02")
+        ] = "2023-02",
+        sample_fraction: Annotated[
+            float, typer.Option(help="Document sampling fraction")
+        ] = 0.3,
+        min_df: Annotated[
+            float, typer.Option(help="CountVectorizer minDF (absolute count or fraction)")
+        ] = 50.0,
+        max_df: Annotated[
+            float, typer.Option(help="CountVectorizer maxDF (absolute count or fraction)")
+        ] = 0.2,
+        vocab_size: Annotated[
+            int, typer.Option(help="CountVectorizer vocabSize cap")
+        ] = 20_000,
         scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
     """Train + evaluate an LDA model for each K, writing per-K subdirs."""
@@ -607,6 +705,11 @@ def sweep_main(
             input_path=input_path,
             output_path=output_path,
             k_values=ks,
+            date=date,
+            sample_fraction=sample_fraction,
+            min_df=min_df,
+            max_df=max_df,
+            vocab_size=vocab_size,
         )],
         **kwargs,
     )
