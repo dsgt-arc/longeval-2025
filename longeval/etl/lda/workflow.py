@@ -10,6 +10,7 @@ from pyspark.sql.functions import udf, col, explode, collect_list, expr
 from pyspark.sql.types import ArrayType, StringType, IntegerType
 from pyspark.ml.feature import CountVectorizer, StopWordsRemover
 from pyspark.ml.clustering import LDA
+import json
 import numpy as np
 import pandas as pd
 import os
@@ -91,6 +92,12 @@ class FitLDAPreprocessing(luigi.Task):
     Without this, a 6-K sweep re-runs ``_analyze_udf`` + ``apply_phrases``
     13× (once per Train and Evaluate task per K). Materialization cuts
     that to one analyze+phrase pass total.
+
+    Cache invalidation: ``complete()`` compares the on-disk ``_config.json``
+    against the current params. Changing date/sample/min_df/etc. triggers
+    a rebuild here, but downstream ``lda_model`` and ``coherence.parquet``
+    in per-K subdirs are NOT auto-invalidated — wipe per-K dirs manually
+    when preprocessing changes.
     """
 
     input_path = luigi.Parameter()
@@ -102,6 +109,31 @@ class FitLDAPreprocessing(luigi.Task):
     vocab_size = luigi.IntParameter(default=20_000)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+
+    def _config_dict(self):
+        return {
+            "input_path": str(self.input_path),
+            "date": str(self.date),
+            "sample_fraction": float(self.sample_fraction),
+            "min_df": float(self.min_df),
+            "max_df": float(self.max_df),
+            "vocab_size": int(self.vocab_size),
+            "phrases_min_count": int(self.phrases_min_count),
+            "phrases_threshold": float(self.phrases_threshold),
+        }
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_config.json")
+
+    def complete(self):
+        features_path = os.path.join(self.output_path, "features.parquet")
+        if not (os.path.exists(features_path) and os.path.exists(self._config_path())):
+            return False
+        try:
+            with open(self._config_path()) as f:
+                return json.load(f) == self._config_dict()
+        except (OSError, json.JSONDecodeError):
+            return False
 
     def run(self):
         with spark_resource() as spark:
@@ -186,7 +218,9 @@ class FitLDAPreprocessing(luigi.Task):
                     vocabSize=int(self.vocab_size),
                 )
                 vector_model = vectorizer.fit(phrased)
-                vector_model.save(os.path.join(self.output_path, "vector_model"))
+                vector_model.write().overwrite().save(
+                    os.path.join(self.output_path, "vector_model")
+                )
 
                 # Materialize features once. TrainLDAModel reads this
                 # directly so the LDA fit for each K sees a sparse-vector
@@ -200,15 +234,17 @@ class FitLDAPreprocessing(luigi.Task):
             finally:
                 phrased.unpersist()
 
+            # Stamp the config last so a partial run doesn't look complete.
+            with open(self._config_path(), "w") as f:
+                json.dump(self._config_dict(), f, indent=2, sort_keys=True)
+
             print(
                 "Preprocessing artifacts saved: phrases, tokens_phrased, "
                 "vector_model, features."
             )
 
     def output(self):
-        # features.parquet is the last artifact written, so its presence
-        # signals all upstream artifacts also succeeded.
-        return luigi.LocalTarget(os.path.join(self.output_path, "features.parquet"))
+        return luigi.LocalTarget(self._config_path())
 
 
 class TrainLDAModel(luigi.Task):
