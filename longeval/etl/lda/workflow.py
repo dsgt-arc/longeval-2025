@@ -5,6 +5,7 @@ Scaling to a real cluster requires changes to ``longeval/spark.py`` — every
 task here opens its own ``spark_resource()`` context.
 """
 
+import functools
 import hashlib
 import json
 import os
@@ -13,7 +14,7 @@ import luigi
 import matplotlib.pyplot as plt
 import pandas as pd
 import typer
-from pyspark.ml.clustering import LDA, DistributedLDAModel
+from pyspark.ml.clustering import LDA, LocalLDAModel
 from pyspark.ml.feature import CountVectorizer, CountVectorizerModel, StopWordsRemover
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql.types import ArrayType, StringType
@@ -57,6 +58,77 @@ def _read_preprocess_hash(preprocess_path: str) -> str | None:
         return None
     with open(cfg, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
+
+
+def _build_lda(
+    k,
+    max_iter,
+    seed,
+    learning_offset,
+    learning_decay,
+    subsampling_rate,
+    optimize_doc_concentration,
+):
+    """Construct an online (variational) LDA estimator.
+
+    Online is the only optimizer: EM's GraphX doc-term graph never scaled
+    past a small sample (it OOM-killed the driver on the full snapshot),
+    and online is PySpark's documented default with O(K*V) driver memory.
+    """
+    return (
+        LDA(
+            k=k,
+            maxIter=max_iter,
+            featuresCol="features",
+            optimizer="online",
+            seed=seed,
+        )
+        .setLearningOffset(learning_offset)
+        .setLearningDecay(learning_decay)
+        .setSubsamplingRate(subsampling_rate)
+        .setOptimizeDocConcentration(optimize_doc_concentration)
+    )
+
+
+def _train_requirement(task):
+    """Route a per-K consumer to the shared sweep trainer or the
+    single-K trainer based on whether ``k_values`` is set.
+
+    ``TrainLDASweep`` fits every K in one cached Spark session via
+    ``fitMultiple`` and writes the exact per-K ``lda_model`` +
+    ``_train_config.json`` layout ``TrainLDAModel`` would, so every per-K
+    consumer in a sweep dedupes onto a single training node. With
+    ``k_values=None`` the single-K path is byte-unchanged.
+    """
+    common = dict(
+        input_path=task.input_path,
+        preprocess_path=task.preprocess_path,
+        date=task.date,
+        sample_fraction=task.sample_fraction,
+        min_df=task.min_df,
+        max_df=task.max_df,
+        vocab_size=task.vocab_size,
+        seed=task.seed,
+        max_iter=task.max_iter,
+        phrases_min_count=task.phrases_min_count,
+        phrases_threshold=task.phrases_threshold,
+        learning_offset=task.learning_offset,
+        learning_decay=task.learning_decay,
+        subsampling_rate=task.subsampling_rate,
+        optimize_doc_concentration=task.optimize_doc_concentration,
+    )
+    if task.k_values is not None:
+        # The sweep root is the parent of the shared preprocess dir
+        # (always <root>/preprocess), so every per-K consumer derives the
+        # SAME TrainLDASweep regardless of its own per-K output_path —
+        # Luigi dedupes them onto one training node.
+        sweep_root = os.path.dirname(task.preprocess_path)
+        return TrainLDASweep(
+            output_path=sweep_root, k_values=task.k_values, **common
+        )
+    return TrainLDAModel(
+        output_path=task.output_path, num_topics=task.num_topics, **common
+    )
 
 
 def _build_lucene_fr_analyzer():
@@ -304,6 +376,10 @@ class TrainLDAModel(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
 
     def _preprocess_path(self):
         return self.preprocess_path or self.output_path
@@ -317,6 +393,10 @@ class TrainLDAModel(luigi.Task):
             "num_topics": int(self.num_topics),
             "seed": int(self.seed),
             "max_iter": int(self.max_iter),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
             "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
         }
 
@@ -343,19 +423,21 @@ class TrainLDAModel(luigi.Task):
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
 
-            # Cache features before LDA.fit. EM-LDA iterates maxIter
-            # times over the input; without an external cache, Spark MLlib
-            # would re-read features.parquet on each pass.
+            # Cache features before LDA.fit. Online VB iterates maxIter
+            # times over mini-batches of the input; without an external
+            # cache, Spark MLlib would re-read features.parquet each pass.
             features = spark.read.parquet(
                 os.path.join(self._preprocess_path(), "features.parquet")
             ).cache()
             try:
-                lda = LDA(
+                lda = _build_lda(
                     k=self.num_topics,
-                    maxIter=self.max_iter,
-                    featuresCol="features",
-                    optimizer="em",
+                    max_iter=self.max_iter,
                     seed=self.seed,
+                    learning_offset=self.learning_offset,
+                    learning_decay=self.learning_decay,
+                    subsampling_rate=self.subsampling_rate,
+                    optimize_doc_concentration=self.optimize_doc_concentration,
                 )
                 lda_model = lda.fit(features)
             finally:
@@ -372,6 +454,138 @@ class TrainLDAModel(luigi.Task):
 
     def output(self):
         return luigi.LocalTarget(self._config_path())
+
+
+class TrainLDASweep(luigi.Task):
+    """Fit every K in one Spark session via ``LDA.fitMultiple``.
+
+    Reads + caches ``features.parquet`` exactly once, then fits all
+    ``k_values`` against that single cached DataFrame, writing each model
+    to ``<output_path>/k{K}/lda_model`` with a per-K ``_train_config.json``
+    stamp **byte-identical** to what a per-K ``TrainLDAModel`` would write.
+    That identity is load-bearing: every per-K downstream consumer
+    (``EvaluateLDAModel`` / ``RunLDAInference``) routes here via
+    ``_train_requirement`` and its ``_stamp_matches`` check against
+    ``k{K}/_train_config.json`` passes without that per-K Train ever
+    running — so the sweep trains once, evaluates per K, and the old
+    per-K-JVM + per-K features re-read are gone.
+
+    ``fitMultiple`` is consumed sequentially for predictable driver
+    memory. Online LDA fits are independent ``LocalLDAModel``s with no
+    shared GraphX state, so a thread pool over the iterator would be
+    memory-safe (unlike the deleted EM optimizer) — left as a future
+    option, not enabled.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    k_values = luigi.ListParameter()
+    preprocess_path = luigi.OptionalParameter(default=None)
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
+
+    def _preprocess_path(self):
+        return self.preprocess_path or self.output_path
+
+    def _k_dir(self, k):
+        return os.path.join(self.output_path, f"k{int(k)}")
+
+    def _train_config_path(self, k):
+        return os.path.join(self._k_dir(k), "_train_config.json")
+
+    def _train_config_dict(self, k):
+        # MUST stay byte-identical to TrainLDAModel._config_dict for this
+        # K (output_path is intentionally absent from that dict, so the
+        # per-K dir location doesn't matter — only the params + upstream
+        # preprocess hash do).
+        return {
+            "task": "TrainLDAModel",
+            "num_topics": int(k),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
+            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+        }
+
+    def complete(self):
+        for k in self.k_values:
+            if not os.path.exists(os.path.join(self._k_dir(k), "lda_model")):
+                return False
+            if not _stamp_matches(
+                self._train_config_path(k), self._train_config_dict(k)
+            ):
+                return False
+        return True
+
+    def requires(self):
+        return FitLDAPreprocessing(
+            input_path=self.input_path,
+            output_path=self._preprocess_path(),
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+        )
+
+    def run(self):
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+
+            # Read + cache the (multi-GB at full slice) feature matrix
+            # ONCE; every K's fit reuses this cache instead of the old
+            # per-K parquet re-read + fresh JVM.
+            features = spark.read.parquet(
+                os.path.join(self._preprocess_path(), "features.parquet")
+            ).cache()
+            try:
+                features.count()
+                lda = _build_lda(
+                    k=int(self.k_values[0]),
+                    max_iter=self.max_iter,
+                    seed=self.seed,
+                    learning_offset=self.learning_offset,
+                    learning_decay=self.learning_decay,
+                    subsampling_rate=self.subsampling_rate,
+                    optimize_doc_concentration=self.optimize_doc_concentration,
+                )
+                param_maps = [{lda.k: int(k)} for k in self.k_values]
+                for index, model in lda.fitMultiple(features, param_maps):
+                    k = int(self.k_values[index])
+                    k_dir = self._k_dir(k)
+                    os.makedirs(k_dir, exist_ok=True)
+                    model.write().overwrite().save(
+                        os.path.join(k_dir, "lda_model")
+                    )
+                    _write_stamp(
+                        self._train_config_path(k),
+                        self._train_config_dict(k),
+                    )
+                    print(f"LDA model saved (k={k}).")
+            finally:
+                features.unpersist()
+
+    def output(self):
+        return [
+            luigi.LocalTarget(self._train_config_path(k))
+            for k in self.k_values
+        ]
 
 
 class RunLDAInference(luigi.Task):
@@ -398,6 +612,15 @@ class RunLDAInference(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
+    # Pure requires()-routing knob: when set, this task depends on the
+    # shared TrainLDASweep (one fitMultiple over all K) instead of a
+    # per-K TrainLDAModel. Deliberately excluded from _config_dict so
+    # the same trained model isn't re-stamped per sweep size.
+    k_values = luigi.OptionalListParameter(default=None)
 
     def _preprocess_path(self):
         return self.preprocess_path or self.output_path
@@ -411,6 +634,10 @@ class RunLDAInference(luigi.Task):
             "num_topics": int(self.num_topics),
             "seed": int(self.seed),
             "max_iter": int(self.max_iter),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
             "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
         }
 
@@ -421,26 +648,12 @@ class RunLDAInference(luigi.Task):
         return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
-        return TrainLDAModel(
-            input_path=self.input_path,
-            output_path=self.output_path,
-            num_topics=self.num_topics,
-            preprocess_path=self.preprocess_path,
-            date=self.date,
-            sample_fraction=self.sample_fraction,
-            min_df=self.min_df,
-            max_df=self.max_df,
-            vocab_size=self.vocab_size,
-            seed=self.seed,
-            max_iter=self.max_iter,
-            phrases_min_count=self.phrases_min_count,
-            phrases_threshold=self.phrases_threshold,
-        )
+        return _train_requirement(self)
 
     def run(self):
         with spark_resource() as spark:
             preprocess = self._preprocess_path()
-            lda_model = DistributedLDAModel.load(
+            lda_model = LocalLDAModel.load(
                 os.path.join(self.output_path, "lda_model")
             )
             vector_model = CountVectorizerModel.load(
@@ -515,6 +728,12 @@ class EvaluateLDAModel(luigi.Task):
     top_n = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
+    # See RunLDAInference: routing-only, excluded from _config_dict.
+    k_values = luigi.OptionalListParameter(default=None)
 
     def _preprocess_path(self):
         return self.preprocess_path or self.output_path
@@ -529,6 +748,10 @@ class EvaluateLDAModel(luigi.Task):
             "seed": int(self.seed),
             "max_iter": int(self.max_iter),
             "top_n": int(self.top_n),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
             "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
         }
 
@@ -538,21 +761,7 @@ class EvaluateLDAModel(luigi.Task):
         return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
-        return TrainLDAModel(
-            input_path=self.input_path,
-            output_path=self.output_path,
-            num_topics=self.num_topics,
-            preprocess_path=self.preprocess_path,
-            date=self.date,
-            sample_fraction=self.sample_fraction,
-            min_df=self.min_df,
-            max_df=self.max_df,
-            vocab_size=self.vocab_size,
-            seed=self.seed,
-            max_iter=self.max_iter,
-            phrases_min_count=self.phrases_min_count,
-            phrases_threshold=self.phrases_threshold,
-        )
+        return _train_requirement(self)
 
     def _coherence_path(self):
         return os.path.join(self.output_path, "coherence.parquet")
@@ -562,7 +771,7 @@ class EvaluateLDAModel(luigi.Task):
             spark.sparkContext.setLogLevel("ERROR")
 
             preprocess = self._preprocess_path()
-            lda_model = DistributedLDAModel.load(
+            lda_model = LocalLDAModel.load(
                 os.path.join(self.output_path, "lda_model")
             )
             vector_model = CountVectorizerModel.load(
@@ -647,6 +856,12 @@ class PlotResults(luigi.Task):
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
     plot_sample_size = luigi.IntParameter(default=50_000)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
+    # See RunLDAInference: routing-only, excluded from _config_dict.
+    k_values = luigi.OptionalListParameter(default=None)
 
     def _preprocess_path(self):
         return self.preprocess_path or self.output_path
@@ -661,6 +876,10 @@ class PlotResults(luigi.Task):
             "seed": int(self.seed),
             "max_iter": int(self.max_iter),
             "plot_sample_size": int(self.plot_sample_size),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
             "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
         }
 
@@ -688,16 +907,24 @@ class PlotResults(luigi.Task):
             max_iter=self.max_iter,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            learning_offset=self.learning_offset,
+            learning_decay=self.learning_decay,
+            subsampling_rate=self.subsampling_rate,
+            optimize_doc_concentration=self.optimize_doc_concentration,
+            k_values=self.k_values,
         )
 
     def run(self):
         with spark_resource() as spark:
             doc_topic_spark_df = spark.read.parquet(
                 os.path.join(self.output_path, "docTopicDistribution_lda.parquet")
-            )
-            total = doc_topic_spark_df.count()
-            frac = min(1.0, float(self.plot_sample_size) / max(total, 1))
-            sample = doc_topic_spark_df.sample(frac, seed=42).toPandas()
+            ).cache()
+            try:
+                total = doc_topic_spark_df.count()
+                frac = min(1.0, float(self.plot_sample_size) / max(total, 1))
+                sample = doc_topic_spark_df.sample(frac, seed=42).toPandas()
+            finally:
+                doc_topic_spark_df.unpersist()
             doc_topic_array = sample.iloc[:, 2:].values
             dominant_topics = sample["highest_topic"].values
 
@@ -749,6 +976,10 @@ class Workflow(luigi.WrapperTask):
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
     plot_sample_size = luigi.IntParameter(default=50_000)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
 
     def requires(self):
         shared = dict(
@@ -764,6 +995,10 @@ class Workflow(luigi.WrapperTask):
             max_iter=self.max_iter,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            learning_offset=self.learning_offset,
+            learning_decay=self.learning_decay,
+            subsampling_rate=self.subsampling_rate,
+            optimize_doc_concentration=self.optimize_doc_concentration,
         )
         return [
             PlotResults(plot_sample_size=self.plot_sample_size, **shared),
@@ -771,18 +1006,21 @@ class Workflow(luigi.WrapperTask):
         ]
 
 
-class SweepLDAK(luigi.WrapperTask):
-    """Run TrainLDAModel + EvaluateLDAModel across a list of K values.
+class AggregateLDASweep(luigi.Task):
+    """The sweep root: train all K once, evaluate per K, union coherence.
 
-    Preprocessing (phrases + CountVectorizer) is shared at
-    ``<output_path>/preprocess/`` so it runs once total, not once per K.
-    Each K's LDA model and coherence parquet live under
-    ``<output_path>/k<K>/`` to avoid collision.
+    Preprocessing is shared at ``<output_path>/preprocess/`` (runs once).
+    Each K's model + coherence live under ``<output_path>/k<K>/``. All
+    per-K ``EvaluateLDAModel``s carry ``k_values`` so they route through
+    one shared ``TrainLDASweep`` (``LDA.fitMultiple`` over a single cached
+    feature matrix) — the old per-K JVM + per-K parquet re-read are gone.
+    Replaces the former ``SweepLDAK`` wrapper; emits a single
+    ``sweep_coherence.parquet`` so K-selection needs no manual globbing.
 
-    Run sequentially: every per-K task opens its own ``spark_resource()``
-    at ``local[N]`` × 14 GB driver, so bumping ``--workers`` above 1 in a
-    single-node session multiplies driver memory linearly and OOMs fast.
-    Cluster mode would change this — see ``longeval.spark``.
+    Tasks still run with the default Luigi ``workers=1``; the preprocess
+    analyze step boots an embedded Lucene JVM per Python worker, so
+    parallel K evaluation in one node would multiply memory — see
+    ``longeval.spark``.
     """
 
     input_path = luigi.Parameter()
@@ -797,9 +1035,37 @@ class SweepLDAK(luigi.WrapperTask):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
 
     def _preprocess_path(self):
         return os.path.join(self.output_path, "preprocess")
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_aggregate_config.json")
+
+    def _summary_path(self):
+        return os.path.join(self.output_path, "sweep_coherence.parquet")
+
+    def _config_dict(self):
+        return {
+            "task": "AggregateLDASweep",
+            "k_values": sorted(int(k) for k in self.k_values),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
+            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+        }
+
+    def complete(self):
+        if not os.path.exists(self._summary_path()):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
         preprocess = self._preprocess_path()
@@ -809,6 +1075,7 @@ class SweepLDAK(luigi.WrapperTask):
                 output_path=os.path.join(self.output_path, f"k{int(k)}"),
                 num_topics=int(k),
                 preprocess_path=preprocess,
+                k_values=self.k_values,
                 date=self.date,
                 sample_fraction=self.sample_fraction,
                 min_df=self.min_df,
@@ -818,9 +1085,39 @@ class SweepLDAK(luigi.WrapperTask):
                 max_iter=self.max_iter,
                 phrases_min_count=self.phrases_min_count,
                 phrases_threshold=self.phrases_threshold,
+                learning_offset=self.learning_offset,
+                learning_decay=self.learning_decay,
+                subsampling_rate=self.subsampling_rate,
+                optimize_doc_concentration=self.optimize_doc_concentration,
             )
             for k in self.k_values
         ]
+
+    def run(self):
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+            cols = [
+                "k",
+                "mean_npmi",
+                "topic_diversity",
+                "coherence_diversity",
+                "n_docs",
+            ]
+            frames = [
+                spark.read.parquet(
+                    os.path.join(self.output_path, f"k{int(k)}", "coherence.parquet")
+                ).select(*cols)
+                for k in self.k_values
+            ]
+            summary = functools.reduce(
+                lambda a, b: a.unionByName(b), frames
+            ).orderBy("k")
+            summary.write.mode("overwrite").parquet(self._summary_path())
+            _write_stamp(self._config_path(), self._config_dict())
+            print(f"Sweep coherence written for k={sorted(int(k) for k in self.k_values)}.")
+
+    def output(self):
+        return luigi.LocalTarget(self._config_path())
 
 
 def main(
@@ -848,9 +1145,9 @@ def main(
         vocab_size: Annotated[
             int, typer.Option(help="CountVectorizer vocabSize cap")
         ] = 20_000,
-        seed: Annotated[int, typer.Option(help="LDA EM optimizer seed")] = 42,
+        seed: Annotated[int, typer.Option(help="LDA optimizer seed")] = 42,
         max_iter: Annotated[
-            int, typer.Option(help="LDA EM maxIter")
+            int, typer.Option(help="LDA maxIter (online variational passes)")
         ] = 10,
         phrases_min_count: Annotated[
             int, typer.Option(help="Min unigram+bigram count for NPMI phrases")
@@ -861,6 +1158,18 @@ def main(
         plot_sample_size: Annotated[
             int, typer.Option(help="Driver-side doc cap for PCA/RP plots")
         ] = 50_000,
+        learning_offset: Annotated[
+            float, typer.Option(help="Online LDA learningOffset (down-weights early iters)")
+        ] = 1024.0,
+        learning_decay: Annotated[
+            float, typer.Option(help="Online LDA learningDecay in (0.5, 1.0]")
+        ] = 0.51,
+        subsampling_rate: Annotated[
+            float, typer.Option(help="Online LDA mini-batch fraction per iteration")
+        ] = 0.05,
+        optimize_doc_concentration: Annotated[
+            bool, typer.Option(help="Online LDA: also estimate docConcentration")
+        ] = True,
         scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
     """Train + evaluate one LDA model for the given K."""
@@ -886,6 +1195,10 @@ def main(
             phrases_min_count=phrases_min_count,
             phrases_threshold=phrases_threshold,
             plot_sample_size=plot_sample_size,
+            learning_offset=learning_offset,
+            learning_decay=learning_decay,
+            subsampling_rate=subsampling_rate,
+            optimize_doc_concentration=optimize_doc_concentration,
         )],
         **kwargs,
     )
@@ -895,9 +1208,9 @@ def sweep_main(
         k_values: Annotated[
             str,
             typer.Argument(
-                help="Comma-separated K values to sweep, e.g. '5,10,20,40,80,160'"
+                help="Comma-separated K values to sweep, e.g. '2,3,5,10,20,30,40,80,160'"
             ),
-        ] = "5,10,20,40,80,160",
+        ] = "2,3,5,10,20,30,40,80,160",
         input_path: Annotated[
             str, typer.Argument(help="Input root directory")
         ] = "/mnt/data/longeval",
@@ -919,9 +1232,9 @@ def sweep_main(
         vocab_size: Annotated[
             int, typer.Option(help="CountVectorizer vocabSize cap")
         ] = 20_000,
-        seed: Annotated[int, typer.Option(help="LDA EM optimizer seed")] = 42,
+        seed: Annotated[int, typer.Option(help="LDA optimizer seed")] = 42,
         max_iter: Annotated[
-            int, typer.Option(help="LDA EM maxIter")
+            int, typer.Option(help="LDA maxIter (online variational passes)")
         ] = 10,
         phrases_min_count: Annotated[
             int, typer.Option(help="Min unigram+bigram count for NPMI phrases")
@@ -929,6 +1242,18 @@ def sweep_main(
         phrases_threshold: Annotated[
             float, typer.Option(help="Min NPMI for a bigram to survive")
         ] = 0.5,
+        learning_offset: Annotated[
+            float, typer.Option(help="Online LDA learningOffset (down-weights early iters)")
+        ] = 1024.0,
+        learning_decay: Annotated[
+            float, typer.Option(help="Online LDA learningDecay in (0.5, 1.0]")
+        ] = 0.51,
+        subsampling_rate: Annotated[
+            float, typer.Option(help="Online LDA mini-batch fraction per iteration")
+        ] = 0.05,
+        optimize_doc_concentration: Annotated[
+            bool, typer.Option(help="Online LDA: also estimate docConcentration")
+        ] = True,
         scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
     """Train + evaluate an LDA model for each K, writing per-K subdirs."""
@@ -943,7 +1268,7 @@ def sweep_main(
         kwargs["local_scheduler"] = True
 
     luigi.build(
-        [SweepLDAK(
+        [AggregateLDASweep(
             input_path=input_path,
             output_path=output_path,
             k_values=ks,
@@ -956,6 +1281,10 @@ def sweep_main(
             max_iter=max_iter,
             phrases_min_count=phrases_min_count,
             phrases_threshold=phrases_threshold,
+            learning_offset=learning_offset,
+            learning_decay=learning_decay,
+            subsampling_rate=subsampling_rate,
+            optimize_doc_concentration=optimize_doc_concentration,
         )],
         **kwargs,
     )
