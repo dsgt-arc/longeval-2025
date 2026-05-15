@@ -1,31 +1,62 @@
+"""LDA topic modeling pipeline.
+
+Runs on a single-driver Spark session (``local[N]`` via ``longeval.spark``).
+Scaling to a real cluster requires changes to ``longeval/spark.py`` — every
+task here opens its own ``spark_resource()`` context.
+"""
+
+import hashlib
+import json
+import os
+
 import luigi
-from longeval.collection import RawCollection
-from longeval.spark import spark_resource
-from pathlib import Path
+import matplotlib.pyplot as plt
+import pandas as pd
 import typer
+from pyspark.ml.clustering import LDA, DistributedLDAModel
+from pyspark.ml.feature import CountVectorizer, CountVectorizerModel, StopWordsRemover
+from pyspark.ml.functions import vector_to_array
+from pyspark.sql.types import ArrayType, StringType
+from pyspark.sql import functions as F
+from pyspark.sql.functions import udf
+from sklearn.decomposition import PCA
+from sklearn.random_projection import GaussianRandomProjection
 from typing_extensions import Annotated
 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf, col, explode, collect_list, expr
-from pyspark.sql.types import ArrayType, StringType, IntegerType
-from pyspark.ml.feature import CountVectorizer, StopWordsRemover
-from pyspark.ml.clustering import LDA
-import json
-import numpy as np
-import pandas as pd
-import os
-from pyspark.sql.functions import col, array_max, array_position
-import matplotlib.pyplot as plt
-from sklearn.decomposition import PCA
 from longeval.collection import ParquetCollection
-from pyspark.ml.clustering import DistributedLDAModel
-from pyspark.ml.feature import CountVectorizerModel
-from sklearn.manifold import MDS
-from sklearn.random_projection import GaussianRandomProjection
-from pyspark.sql import functions as F
-
 from longeval.etl.lda.coherence import doc_level_npmi_coherence
 from longeval.etl.lda.phrases import apply_phrases, fit_phrases
+from longeval.spark import spark_resource
+
+
+def _write_stamp(path: str, config: dict) -> None:
+    """Write a task-completion stamp to ``path`` as sorted JSON."""
+    with open(path, "w") as f:
+        json.dump(config, f, indent=2, sort_keys=True)
+
+
+def _stamp_matches(path: str, expected: dict) -> bool:
+    """True iff ``path`` exists and contains ``expected`` verbatim."""
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path) as f:
+            return json.load(f) == expected
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+def _read_preprocess_hash(preprocess_path: str) -> str | None:
+    """SHA-256 of the upstream preprocess ``_config.json`` bytes, or None.
+
+    Per-K stamps embed this hash so any preprocessing param change cascades
+    invalidation through Train/Inference/Eval/Plot without manual cleanup.
+    """
+    cfg = os.path.join(preprocess_path, "_config.json")
+    if not os.path.exists(cfg):
+        return None
+    with open(cfg, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 
 def _build_lucene_fr_analyzer():
@@ -95,9 +126,9 @@ class FitLDAPreprocessing(luigi.Task):
 
     Cache invalidation: ``complete()`` compares the on-disk ``_config.json``
     against the current params. Changing date/sample/min_df/etc. triggers
-    a rebuild here, but downstream ``lda_model`` and ``coherence.parquet``
-    in per-K subdirs are NOT auto-invalidated — wipe per-K dirs manually
-    when preprocessing changes.
+    a rebuild here, and downstream per-K tasks embed a SHA-256 of this
+    stamp in their own stamps so a preprocessing change cascades through
+    Train / Inference / Eval / Plot automatically.
     """
 
     input_path = luigi.Parameter()
@@ -127,13 +158,9 @@ class FitLDAPreprocessing(luigi.Task):
 
     def complete(self):
         features_path = os.path.join(self.output_path, "features.parquet")
-        if not (os.path.exists(features_path) and os.path.exists(self._config_path())):
+        if not os.path.exists(features_path):
             return False
-        try:
-            with open(self._config_path()) as f:
-                return json.load(f) == self._config_dict()
-        except (OSError, json.JSONDecodeError):
-            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
 
     def run(self):
         with spark_resource() as spark:
@@ -235,8 +262,7 @@ class FitLDAPreprocessing(luigi.Task):
                 phrased.unpersist()
 
             # Stamp the config last so a partial run doesn't look complete.
-            with open(self._config_path(), "w") as f:
-                json.dump(self._config_dict(), f, indent=2, sort_keys=True)
+            _write_stamp(self._config_path(), self._config_dict())
 
             print(
                 "Preprocessing artifacts saved: phrases, tokens_phrased, "
@@ -255,6 +281,14 @@ class TrainLDAModel(luigi.Task):
     and writes ``lda_model`` into ``output_path``. In a K sweep,
     ``preprocess_path`` is a shared root and each K writes its own
     ``lda_model`` to a per-K subdir.
+
+    Completion is gated by a ``_train_config.json`` stamp containing this
+    task's own params plus a SHA-256 of the upstream preprocess stamp;
+    changing K / seed / maxIter / any preprocessing param invalidates this
+    task and (transitively, via their own stamps) every downstream consumer.
+    The stamp filename is distinct from ``_config.json`` so the Train and
+    Fit stamps don't collide when ``preprocess_path == output_path`` (the
+    default in single-K runs).
     """
 
     input_path = luigi.Parameter()
@@ -267,11 +301,30 @@ class TrainLDAModel(luigi.Task):
     max_df = luigi.FloatParameter(default=0.2)
     vocab_size = luigi.IntParameter(default=20_000)
     seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
 
     def _preprocess_path(self):
         return self.preprocess_path or self.output_path
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_train_config.json")
+
+    def _config_dict(self):
+        return {
+            "task": "TrainLDAModel",
+            "num_topics": int(self.num_topics),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+        }
+
+    def complete(self):
+        model_path = os.path.join(self.output_path, "lda_model")
+        if not os.path.exists(model_path):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
         return FitLDAPreprocessing(
@@ -299,7 +352,7 @@ class TrainLDAModel(luigi.Task):
             try:
                 lda = LDA(
                     k=self.num_topics,
-                    maxIter=10,
+                    maxIter=self.max_iter,
                     featuresCol="features",
                     optimizer="em",
                     seed=self.seed,
@@ -309,14 +362,29 @@ class TrainLDAModel(luigi.Task):
                 features.unpersist()
 
             os.makedirs(self.output_path, exist_ok=True)
-            lda_model.save(os.path.join(self.output_path, "lda_model"))
+            # overwrite() so an interrupted prior run doesn't permanently
+            # poison the output dir; LocalTarget existence is not enough.
+            lda_model.write().overwrite().save(
+                os.path.join(self.output_path, "lda_model")
+            )
+            _write_stamp(self._config_path(), self._config_dict())
             print(f"LDA model saved (k={self.num_topics}).")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.output_path, "lda_model"))
+        return luigi.LocalTarget(self._config_path())
 
 
 class RunLDAInference(luigi.Task):
+    """Score every doc against the trained LDA, write wide doc-topic parquet.
+
+    Stays in Spark end-to-end: ``vector_to_array`` turns the distribution
+    vector into an array column, ``array_position(arr, array_max(arr))``
+    gives the dominant topic, and the K probabilities are projected into
+    ``topic_0`` ... ``topic_{K-1}`` columns. Previously this task collected
+    every doc-topic distribution to the driver via ``toPandas()``, which
+    capped scale at ~``spark.driver.maxResultSize`` worth of dense floats.
+    """
+
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
@@ -326,11 +394,31 @@ class RunLDAInference(luigi.Task):
     min_df = luigi.FloatParameter(default=50.0)
     max_df = luigi.FloatParameter(default=0.2)
     vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
 
     def _preprocess_path(self):
         return self.preprocess_path or self.output_path
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_inference_config.json")
+
+    def _config_dict(self):
+        return {
+            "task": "RunLDAInference",
+            "num_topics": int(self.num_topics),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+        }
+
+    def complete(self):
+        out = os.path.join(self.output_path, "docTopicDistribution_lda.parquet")
+        if not os.path.exists(out):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
         return TrainLDAModel(
@@ -343,6 +431,8 @@ class RunLDAInference(luigi.Task):
             min_df=self.min_df,
             max_df=self.max_df,
             vocab_size=self.vocab_size,
+            seed=self.seed,
+            max_iter=self.max_iter,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
         )
@@ -356,13 +446,6 @@ class RunLDAInference(luigi.Task):
             vector_model = CountVectorizerModel.load(
                 os.path.join(preprocess, "vector_model")
             )
-            # Reuse the materialized features from FitLDAPreprocessing.
-            # Previously this task re-sampled with seed=94, then re-ran
-            # _analyze_udf + apply_phrases + vector_model.transform — work
-            # the preprocessor has already done and written to disk. The
-            # seed=94 sample wasn't truly held-out (same month, 30% draw
-            # from the same population) so dropping it costs nothing
-            # interpretively while saving a full analyze pass.
             features = spark.read.parquet(
                 os.path.join(preprocess, "features.parquet")
             )
@@ -370,52 +453,43 @@ class RunLDAInference(luigi.Task):
             vocab = vector_model.vocabulary
             if not vocab:
                 raise ValueError("Empty CountVectorizer vocabulary.")
+
+            # describeTopics is K rows — collect is fine, no scale concern.
             topics = lda_model.describeTopics(maxTermsPerTopic=100)
             topic_words = {
                 row.topic: [vocab[i] for i in row.termIndices]
                 for row in topics.collect()
             }
-            topic_words_file_path = os.path.join(
-                self.output_path, "topicWords_lda.txt"
-            )
-            topic_words_df = pd.DataFrame(
+            pd.DataFrame(
                 list(topic_words.items()), columns=["Topic", "Words"]
-            )
-            topic_words_df.to_csv(topic_words_file_path, index=False)
+            ).to_csv(os.path.join(self.output_path, "topicWords_lda.txt"), index=False)
 
-            topic_distributions = lda_model.transform(features)
-            doc_topic_df = topic_distributions.select(
-                "docid", "topicDistribution"
-            ).toPandas()
-            doc_topic_array = np.vstack(
-                doc_topic_df["topicDistribution"].apply(lambda v: v.toArray())
+            # Doc-topic distribution: stay in Spark. array_position is
+            # 1-indexed so subtract 1 for a 0-indexed topic id.
+            scored = (
+                lda_model.transform(features)
+                .select("docid", vector_to_array("topicDistribution").alias("td"))
+                .withColumn(
+                    "highest_topic",
+                    (F.array_position(F.col("td"), F.array_max(F.col("td"))) - 1).cast(
+                        "int"
+                    ),
+                )
             )
-            doc_topic_df["highest_topic"] = np.argmax(doc_topic_array, axis=1)
-
-            topic_probabilities_df = pd.DataFrame(
-                doc_topic_array,
-                columns=[f"topic_{i}" for i in range(self.num_topics)],
-            )
-            result_df = pd.concat(
-                [
-                    doc_topic_df[["docid"]],
-                    doc_topic_df[["highest_topic"]],
-                    topic_probabilities_df,
-                ],
-                axis=1,
+            projected = scored.select(
+                F.col("docid"),
+                F.col("highest_topic"),
+                *[F.col("td")[i].alias(f"topic_{i}") for i in range(self.num_topics)],
             )
             result_parquet_path = os.path.join(
                 self.output_path, "docTopicDistribution_lda.parquet"
             )
-            (
-                spark.createDataFrame(result_df)
-                .write.mode("overwrite")
-                .parquet(result_parquet_path)
-            )
+            projected.write.mode("overwrite").parquet(result_parquet_path)
+            _write_stamp(self._config_path(), self._config_dict())
             print("Inference completed.")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.output_path, "docTopicDistribution_lda.parquet"))
+        return luigi.LocalTarget(self._config_path())
 
 
 class EvaluateLDAModel(luigi.Task):
@@ -436,12 +510,32 @@ class EvaluateLDAModel(luigi.Task):
     min_df = luigi.FloatParameter(default=50.0)
     max_df = luigi.FloatParameter(default=0.2)
     vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
     top_n = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
 
     def _preprocess_path(self):
         return self.preprocess_path or self.output_path
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_eval_config.json")
+
+    def _config_dict(self):
+        return {
+            "task": "EvaluateLDAModel",
+            "num_topics": int(self.num_topics),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "top_n": int(self.top_n),
+            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+        }
+
+    def complete(self):
+        if not os.path.exists(self._coherence_path()):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
         return TrainLDAModel(
@@ -454,6 +548,8 @@ class EvaluateLDAModel(luigi.Task):
             min_df=self.min_df,
             max_df=self.max_df,
             vocab_size=self.vocab_size,
+            seed=self.seed,
+            max_iter=self.max_iter,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
         )
@@ -518,6 +614,7 @@ class EvaluateLDAModel(luigi.Task):
                 .write.mode("overwrite")
                 .parquet(self._coherence_path())
             )
+            _write_stamp(self._config_path(), self._config_dict())
             print(
                 f"k={self.num_topics}: mean_npmi={row['mean_npmi']:.4f}, "
                 f"diversity={row['topic_diversity']:.4f}, "
@@ -525,61 +622,117 @@ class EvaluateLDAModel(luigi.Task):
             )
 
     def output(self):
-        return luigi.LocalTarget(self._coherence_path())
+        return luigi.LocalTarget(self._config_path())
 
 
 class PlotResults(luigi.Task):
+    """Project doc-topic distributions to 2D for visual sanity checks.
+
+    Samples down to ``plot_sample_size`` docs before pulling to pandas;
+    PCA / random projection on a 50k subsample is indistinguishable from
+    the full set visually but is bounded in driver memory.
+    """
+
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     num_topics = luigi.IntParameter()
+    preprocess_path = luigi.OptionalParameter(default=None)
     date = luigi.Parameter(default="2023-02")
     sample_fraction = luigi.FloatParameter(default=0.3)
     min_df = luigi.FloatParameter(default=50.0)
     max_df = luigi.FloatParameter(default=0.2)
     vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+    plot_sample_size = luigi.IntParameter(default=50_000)
+
+    def _preprocess_path(self):
+        return self.preprocess_path or self.output_path
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_plot_config.json")
+
+    def _config_dict(self):
+        return {
+            "task": "PlotResults",
+            "num_topics": int(self.num_topics),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "plot_sample_size": int(self.plot_sample_size),
+            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+        }
+
+    def complete(self):
+        pngs = [
+            os.path.join(self.output_path, "pca_lda_topics.png"),
+            os.path.join(self.output_path, "rp_lda_topics.png"),
+        ]
+        if not all(os.path.exists(p) for p in pngs):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
         return RunLDAInference(
             input_path=self.input_path,
             output_path=self.output_path,
             num_topics=self.num_topics,
+            preprocess_path=self.preprocess_path,
             date=self.date,
             sample_fraction=self.sample_fraction,
             min_df=self.min_df,
             max_df=self.max_df,
             vocab_size=self.vocab_size,
+            seed=self.seed,
+            max_iter=self.max_iter,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
         )
 
     def run(self):
         with spark_resource() as spark:
-            doc_topic_spark_df = spark.read.parquet(os.path.join(self.output_path, "docTopicDistribution_lda.parquet"))
-            doc_topic_df = doc_topic_spark_df.toPandas()
-            doc_topic_array = doc_topic_df.iloc[:, 2:].values
-            dominant_topics = doc_topic_df['highest_topic'].values
+            doc_topic_spark_df = spark.read.parquet(
+                os.path.join(self.output_path, "docTopicDistribution_lda.parquet")
+            )
+            total = doc_topic_spark_df.count()
+            frac = min(1.0, float(self.plot_sample_size) / max(total, 1))
+            sample = doc_topic_spark_df.sample(frac, seed=42).toPandas()
+            doc_topic_array = sample.iloc[:, 2:].values
+            dominant_topics = sample["highest_topic"].values
 
-            # PCA Plot
             pca = PCA(n_components=2)
             doc_topic_2d_pca = pca.fit_transform(doc_topic_array)
             plt.figure(figsize=(10, 6))
-            plt.scatter(doc_topic_2d_pca[:, 0], doc_topic_2d_pca[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
-            plt.colorbar(label='Topic')
-            plt.title('LDA PCA Topic Clusters')
-            plt.savefig(os.path.join(self.output_path, 'pca_lda_topics.png'))
+            plt.scatter(
+                doc_topic_2d_pca[:, 0],
+                doc_topic_2d_pca[:, 1],
+                c=dominant_topics,
+                cmap="tab20",
+                alpha=0.6,
+            )
+            plt.colorbar(label="Topic")
+            plt.title("LDA PCA Topic Clusters")
+            plt.savefig(os.path.join(self.output_path, "pca_lda_topics.png"))
 
-            # RP plot
             rp = GaussianRandomProjection(n_components=2, random_state=42)
             doc_topic_2d_rp = rp.fit_transform(doc_topic_array)
             plt.figure(figsize=(10, 6))
-            plt.scatter(doc_topic_2d_rp[:, 0], doc_topic_2d_rp[:, 1], c=dominant_topics, cmap='tab20', alpha=0.6)
-            plt.colorbar(label='Topic')
-            plt.title('LDA RP Topic Clusters')
-            plt.savefig(os.path.join(self.output_path, 'rp_lda_topics.png'))
+            plt.scatter(
+                doc_topic_2d_rp[:, 0],
+                doc_topic_2d_rp[:, 1],
+                c=dominant_topics,
+                cmap="tab20",
+                alpha=0.6,
+            )
+            plt.colorbar(label="Topic")
+            plt.title("LDA RP Topic Clusters")
+            plt.savefig(os.path.join(self.output_path, "rp_lda_topics.png"))
+
+            _write_stamp(self._config_path(), self._config_dict())
 
     def output(self):
-        return [
-            luigi.LocalTarget(os.path.join(self.output_path, 'pca_lda_topics.png')),
-            luigi.LocalTarget(os.path.join(self.output_path, 'rp_lda_topics.png'))
-        ]
+        return luigi.LocalTarget(self._config_path())
 
 
 class Workflow(luigi.WrapperTask):
@@ -591,9 +744,14 @@ class Workflow(luigi.WrapperTask):
     min_df = luigi.FloatParameter(default=50.0)
     max_df = luigi.FloatParameter(default=0.2)
     vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+    plot_sample_size = luigi.IntParameter(default=50_000)
 
     def requires(self):
-        kwargs = dict(
+        shared = dict(
             input_path=self.input_path,
             output_path=self.output_path,
             num_topics=self.num_topics,
@@ -602,8 +760,15 @@ class Workflow(luigi.WrapperTask):
             min_df=self.min_df,
             max_df=self.max_df,
             vocab_size=self.vocab_size,
+            seed=self.seed,
+            max_iter=self.max_iter,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
         )
-        return [PlotResults(**kwargs), EvaluateLDAModel(**kwargs)]
+        return [
+            PlotResults(plot_sample_size=self.plot_sample_size, **shared),
+            EvaluateLDAModel(**shared),
+        ]
 
 
 class SweepLDAK(luigi.WrapperTask):
@@ -613,6 +778,11 @@ class SweepLDAK(luigi.WrapperTask):
     ``<output_path>/preprocess/`` so it runs once total, not once per K.
     Each K's LDA model and coherence parquet live under
     ``<output_path>/k<K>/`` to avoid collision.
+
+    Run sequentially: every per-K task opens its own ``spark_resource()``
+    at ``local[N]`` × 14 GB driver, so bumping ``--workers`` above 1 in a
+    single-node session multiplies driver memory linearly and OOMs fast.
+    Cluster mode would change this — see ``longeval.spark``.
     """
 
     input_path = luigi.Parameter()
@@ -623,6 +793,10 @@ class SweepLDAK(luigi.WrapperTask):
     min_df = luigi.FloatParameter(default=50.0)
     max_df = luigi.FloatParameter(default=0.2)
     vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
 
     def _preprocess_path(self):
         return os.path.join(self.output_path, "preprocess")
@@ -640,6 +814,10 @@ class SweepLDAK(luigi.WrapperTask):
                 min_df=self.min_df,
                 max_df=self.max_df,
                 vocab_size=self.vocab_size,
+                seed=self.seed,
+                max_iter=self.max_iter,
+                phrases_min_count=self.phrases_min_count,
+                phrases_threshold=self.phrases_threshold,
             )
             for k in self.k_values
         ]
@@ -670,6 +848,19 @@ def main(
         vocab_size: Annotated[
             int, typer.Option(help="CountVectorizer vocabSize cap")
         ] = 20_000,
+        seed: Annotated[int, typer.Option(help="LDA EM optimizer seed")] = 42,
+        max_iter: Annotated[
+            int, typer.Option(help="LDA EM maxIter")
+        ] = 10,
+        phrases_min_count: Annotated[
+            int, typer.Option(help="Min unigram+bigram count for NPMI phrases")
+        ] = 20,
+        phrases_threshold: Annotated[
+            float, typer.Option(help="Min NPMI for a bigram to survive")
+        ] = 0.5,
+        plot_sample_size: Annotated[
+            int, typer.Option(help="Driver-side doc cap for PCA/RP plots")
+        ] = 50_000,
         scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
     """Train + evaluate one LDA model for the given K."""
@@ -690,6 +881,11 @@ def main(
             min_df=min_df,
             max_df=max_df,
             vocab_size=vocab_size,
+            seed=seed,
+            max_iter=max_iter,
+            phrases_min_count=phrases_min_count,
+            phrases_threshold=phrases_threshold,
+            plot_sample_size=plot_sample_size,
         )],
         **kwargs,
     )
@@ -723,6 +919,16 @@ def sweep_main(
         vocab_size: Annotated[
             int, typer.Option(help="CountVectorizer vocabSize cap")
         ] = 20_000,
+        seed: Annotated[int, typer.Option(help="LDA EM optimizer seed")] = 42,
+        max_iter: Annotated[
+            int, typer.Option(help="LDA EM maxIter")
+        ] = 10,
+        phrases_min_count: Annotated[
+            int, typer.Option(help="Min unigram+bigram count for NPMI phrases")
+        ] = 20,
+        phrases_threshold: Annotated[
+            float, typer.Option(help="Min NPMI for a bigram to survive")
+        ] = 0.5,
         scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
 ):
     """Train + evaluate an LDA model for each K, writing per-K subdirs."""
@@ -746,6 +952,10 @@ def sweep_main(
             min_df=min_df,
             max_df=max_df,
             vocab_size=vocab_size,
+            seed=seed,
+            max_iter=max_iter,
+            phrases_min_count=phrases_min_count,
+            phrases_threshold=phrases_threshold,
         )],
         **kwargs,
     )

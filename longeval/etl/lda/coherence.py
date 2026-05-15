@@ -73,19 +73,26 @@ def doc_level_npmi_coherence(
 
     spark = tokens_df.sparkSession
     needed_pairs_bc = spark.sparkContext.broadcast(needed_pairs)
+    vocab_bc = spark.sparkContext.broadcast(set(vocab))
 
-    # Push the vocab filter into Spark SQL via array_intersect against a
-    # broadcast literal. array_distinct gives doc-frequency semantics: a
-    # word in a doc counts once regardless of in-doc token frequency.
-    # array_sort lets the pair UDF rely on v[i] < v[j].
-    vocab_array = F.array(*[F.lit(w) for w in vocab])
+    # Restrict each doc to its set of in-vocab tokens in sorted order.
+    # Doing this in a Python UDF avoids embedding ~|vocab| string literals
+    # in the query plan (which array_intersect against F.array(*[F.lit...])
+    # would do) and gives doc-frequency semantics (each in-vocab token
+    # counted once per doc) plus the sorted invariant the pair UDF needs.
+    @F.udf(ArrayType(StringType()))
+    def _restrict(tokens):
+        if not tokens:
+            return []
+        vset = vocab_bc.value
+        seen = set()
+        for t in tokens:
+            if t in vset:
+                seen.add(t)
+        return sorted(seen)
+
     restricted = (
-        tokens_df.select(
-            F.array_sort(
-                F.array_distinct(F.array_intersect(F.col(tokens_col), vocab_array))
-            ).alias("v")
-        )
-        .cache()
+        tokens_df.select(_restrict(F.col(tokens_col)).alias("v")).cache()
     )
 
     try:
@@ -152,6 +159,7 @@ def doc_level_npmi_coherence(
     finally:
         restricted.unpersist()
         needed_pairs_bc.unpersist()
+        vocab_bc.unpersist()
 
 
 def _topic_npmi(words, p_w, p_ab):
