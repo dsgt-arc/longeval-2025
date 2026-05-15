@@ -47,17 +47,54 @@ def _stamp_matches(path: str, expected: dict) -> bool:
         return False
 
 
-def _read_preprocess_hash(preprocess_path: str) -> str | None:
-    """SHA-256 of the upstream preprocess ``_config.json`` bytes, or None.
+def _canonical_hash(cfg: dict) -> str:
+    """SHA-256 of a config dict's canonical (sorted-key) JSON."""
+    return hashlib.sha256(
+        json.dumps(cfg, sort_keys=True).encode()
+    ).hexdigest()
 
-    Per-K stamps embed this hash so any preprocessing param change cascades
-    invalidation through Train/Inference/Eval/Plot without manual cleanup.
+
+def _phrases_hash(task) -> str:
+    """Hash of the *requested* MinePhrases config, derived from the
+    task's own params — NOT read from the materialized on-disk stamp.
+
+    Embedded in the BuildFeatures stamp so a phrase-param change
+    invalidates BuildFeatures' ``complete()`` directly.
     """
-    cfg = os.path.join(preprocess_path, "_config.json")
-    if not os.path.exists(cfg):
-        return None
-    with open(cfg, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
+    return _canonical_hash(
+        {
+            "input_path": str(task.input_path),
+            "date": str(task.date),
+            "sample_fraction": float(task.sample_fraction),
+            "phrases_min_count": int(task.phrases_min_count),
+            "phrases_threshold": float(task.phrases_threshold),
+        }
+    )
+
+
+def _preprocess_hash(task) -> str:
+    """Hash of the *requested* preprocessing config (phrases + vocab),
+    derived from the task's own params — NOT read from the materialized
+    on-disk preprocess stamp.
+
+    Every per-K / root stamp embeds this. Keying off the *requested*
+    config (not the last-built one) is what makes a preprocessing param
+    change flip ``complete()`` at the leaves, so Luigi descends and
+    re-runs BuildFeatures/MinePhrases instead of short-circuiting on a
+    stale materialized hash.
+    """
+    return _canonical_hash(
+        {
+            "input_path": str(task.input_path),
+            "date": str(task.date),
+            "sample_fraction": float(task.sample_fraction),
+            "min_df": float(task.min_df),
+            "max_df": float(task.max_df),
+            "vocab_size": int(task.vocab_size),
+            "phrases_min_count": int(task.phrases_min_count),
+            "phrases_threshold": float(task.phrases_threshold),
+        }
+    )
 
 
 def _build_lda(
@@ -131,6 +168,43 @@ def _train_requirement(task):
     )
 
 
+def _infer_requirement(task):
+    """Inference analogue of ``_train_requirement``: route a per-K
+    consumer to the shared ``InferLDASweep`` (one cached session, all K)
+    or the single-K ``RunLDAInference``.
+
+    ``InferLDASweep`` writes the exact per-K ``docTopicDistribution`` +
+    ``_inference_config.json`` layout ``RunLDAInference`` would, so a
+    sweep's consumers dedupe onto one inference node — no per-K JVM or
+    features re-read. ``k_values=None`` keeps the single-K path unchanged.
+    """
+    common = dict(
+        input_path=task.input_path,
+        preprocess_path=task.preprocess_path,
+        date=task.date,
+        sample_fraction=task.sample_fraction,
+        min_df=task.min_df,
+        max_df=task.max_df,
+        vocab_size=task.vocab_size,
+        seed=task.seed,
+        max_iter=task.max_iter,
+        phrases_min_count=task.phrases_min_count,
+        phrases_threshold=task.phrases_threshold,
+        learning_offset=task.learning_offset,
+        learning_decay=task.learning_decay,
+        subsampling_rate=task.subsampling_rate,
+        optimize_doc_concentration=task.optimize_doc_concentration,
+    )
+    if task.k_values is not None:
+        sweep_root = os.path.dirname(task.preprocess_path)
+        return InferLDASweep(
+            output_path=sweep_root, k_values=task.k_values, **common
+        )
+    return RunLDAInference(
+        output_path=task.output_path, num_topics=task.num_topics, **common
+    )
+
+
 def _build_lucene_fr_analyzer():
     """Return a fresh Lucene FR analyzer (lowercase + Snowball + FR stops)."""
     from pyserini.analysis import Analyzer, get_lucene_analyzer
@@ -176,61 +250,44 @@ def _build_stop_stems() -> list[str]:
     return sorted(stems)
 
 
-class FitLDAPreprocessing(luigi.Task):
-    """K-independent preprocessing: materialize the LDA input pipeline.
+class MinePhrases(luigi.Task):
+    """Analyze + NPMI-bigram the corpus — the expensive, vocab-independent
+    half of preprocessing.
 
-    Runs the expensive corpus transformations exactly once per (date,
-    seed, threshold) config and writes their outputs to disk so every
-    downstream K-specific task can ``spark.read.parquet`` them:
+    The per-row Lucene/pyjnius analyze is the pipeline's dominant cost and
+    depends only on date/sample/phrase params, never on vocab pruning.
+    Splitting it out so a min_df/max_df/vocab_size change reuses this pass
+    instead of re-running it. Writes into the shared ``<root>/preprocess``
+    dir (layout unchanged):
 
-    - ``phrases.parquet``        — NPMI bigram set (driver-loadable).
-    - ``tokens_phrased.parquet`` — analyzed + phrase-augmented tokens
-                                   per ``docid``. Lets coherence and any
-                                   future text-level eval reuse the same
-                                   tokenization the model trained on.
-    - ``vector_model``           — CountVectorizerModel (vocabulary).
-    - ``features.parquet``       — sparse feature vectors per ``docid``,
-                                   ready to feed ``LDA.fit``. K-independent.
-
-    Without this, a 6-K sweep re-runs ``_analyze_udf`` + ``apply_phrases``
-    13× (once per Train and Evaluate task per K). Materialization cuts
-    that to one analyze+phrase pass total.
-
-    Cache invalidation: ``complete()`` compares the on-disk ``_config.json``
-    against the current params. Changing date/sample/min_df/etc. triggers
-    a rebuild here, and downstream per-K tasks embed a SHA-256 of this
-    stamp in their own stamps so a preprocessing change cascades through
-    Train / Inference / Eval / Plot automatically.
+    - ``tokens_phrased.parquet`` — analyzed + phrase-augmented tokens per
+      ``docid``; the load-bearing handoff BuildFeatures and coherence read.
+    - ``phrases.parquet``        — NPMI bigram set (debug byproduct).
     """
 
     input_path = luigi.Parameter()
     output_path = luigi.Parameter()
     date = luigi.Parameter(default="2023-02")
     sample_fraction = luigi.FloatParameter(default=0.3)
-    min_df = luigi.FloatParameter(default=50.0)
-    max_df = luigi.FloatParameter(default=0.2)
-    vocab_size = luigi.IntParameter(default=20_000)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
 
     def _config_dict(self):
         return {
+            "task": "MinePhrases",
             "input_path": str(self.input_path),
             "date": str(self.date),
             "sample_fraction": float(self.sample_fraction),
-            "min_df": float(self.min_df),
-            "max_df": float(self.max_df),
-            "vocab_size": int(self.vocab_size),
             "phrases_min_count": int(self.phrases_min_count),
             "phrases_threshold": float(self.phrases_threshold),
         }
 
     def _config_path(self):
-        return os.path.join(self.output_path, "_config.json")
+        return os.path.join(self.output_path, "_phrases_config.json")
 
     def complete(self):
-        features_path = os.path.join(self.output_path, "features.parquet")
-        if not os.path.exists(features_path):
+        phrased = os.path.join(self.output_path, "tokens_phrased.parquet")
+        if not os.path.exists(phrased):
             return False
         return _stamp_matches(self._config_path(), self._config_dict())
 
@@ -278,7 +335,6 @@ class FitLDAPreprocessing(luigi.Task):
             os.makedirs(self.output_path, exist_ok=True)
             phrases_path = os.path.join(self.output_path, "phrases.parquet")
             phrased_path = os.path.join(self.output_path, "tokens_phrased.parquet")
-            features_path = os.path.join(self.output_path, "features.parquet")
             try:
                 fit_phrases(
                     analyzed,
@@ -289,8 +345,9 @@ class FitLDAPreprocessing(luigi.Task):
                 )
                 phrases_df = spark.read.parquet(phrases_path)
 
-                # Materialize phrased tokens once. EvaluateLDAModel will
-                # read this directly instead of re-running apply_phrases.
+                # Materialize phrased tokens once — the load-bearing
+                # artifact BuildFeatures and EvaluateLDAModel read so the
+                # JVM analyze never re-runs on a vocab-param change.
                 (
                     apply_phrases(analyzed, phrases_df)
                     .select("docid", "tokens_phrased")
@@ -299,6 +356,70 @@ class FitLDAPreprocessing(luigi.Task):
                 )
             finally:
                 analyzed.unpersist()
+
+            # Stamp last so a partial run doesn't look complete.
+            _write_stamp(self._config_path(), self._config_dict())
+            print("MinePhrases: phrases + tokens_phrased written.")
+
+    def output(self):
+        return luigi.LocalTarget(self._config_path())
+
+
+class BuildFeatures(luigi.Task):
+    """CountVectorizer over MinePhrases' ``tokens_phrased`` — the
+    vocab-dependent half of preprocessing.
+
+    Given a fixed phrasing this depends only on min_df/max_df/vocab_size,
+    so a vocab-param change re-runs only this and reuses the expensive
+    analyze pass. Its stamp keeps the name ``_config.json`` (unchanged) so
+    the downstream ``preprocess_hash`` cascade is untouched, and embeds
+    the ``MinePhrases`` stamp hash so a phrase-param change propagates
+    into ``preprocess_hash`` and cascades through every per-K task.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+
+    def requires(self):
+        return MinePhrases(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+        )
+
+    def _config_dict(self):
+        return {
+            "task": "BuildFeatures",
+            "min_df": float(self.min_df),
+            "max_df": float(self.max_df),
+            "vocab_size": int(self.vocab_size),
+            "phrases_hash": _phrases_hash(self),
+        }
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_config.json")
+
+    def complete(self):
+        features_path = os.path.join(self.output_path, "features.parquet")
+        if not os.path.exists(features_path):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
+
+    def run(self):
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+            phrased_path = os.path.join(self.output_path, "tokens_phrased.parquet")
+            features_path = os.path.join(self.output_path, "features.parquet")
 
             # Cache phrased across vectorizer.fit + transform so we read
             # the multi-GB phrased parquet from disk exactly once.
@@ -333,13 +454,9 @@ class FitLDAPreprocessing(luigi.Task):
             finally:
                 phrased.unpersist()
 
-            # Stamp the config last so a partial run doesn't look complete.
+            # Stamp last so a partial run doesn't look complete.
             _write_stamp(self._config_path(), self._config_dict())
-
-            print(
-                "Preprocessing artifacts saved: phrases, tokens_phrased, "
-                "vector_model, features."
-            )
+            print("BuildFeatures: vector_model + features written.")
 
     def output(self):
         return luigi.LocalTarget(self._config_path())
@@ -397,7 +514,7 @@ class TrainLDAModel(luigi.Task):
             "learning_decay": float(self.learning_decay),
             "subsampling_rate": float(self.subsampling_rate),
             "optimize_doc_concentration": bool(self.optimize_doc_concentration),
-            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+            "preprocess_hash": _preprocess_hash(self),
         }
 
     def complete(self):
@@ -407,7 +524,7 @@ class TrainLDAModel(luigi.Task):
         return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
-        return FitLDAPreprocessing(
+        return BuildFeatures(
             input_path=self.input_path,
             output_path=self._preprocess_path(),
             date=self.date,
@@ -518,7 +635,7 @@ class TrainLDASweep(luigi.Task):
             "learning_decay": float(self.learning_decay),
             "subsampling_rate": float(self.subsampling_rate),
             "optimize_doc_concentration": bool(self.optimize_doc_concentration),
-            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+            "preprocess_hash": _preprocess_hash(self),
         }
 
     def complete(self):
@@ -532,7 +649,7 @@ class TrainLDASweep(luigi.Task):
         return True
 
     def requires(self):
-        return FitLDAPreprocessing(
+        return BuildFeatures(
             input_path=self.input_path,
             output_path=self._preprocess_path(),
             date=self.date,
@@ -638,7 +755,7 @@ class RunLDAInference(luigi.Task):
             "learning_decay": float(self.learning_decay),
             "subsampling_rate": float(self.subsampling_rate),
             "optimize_doc_concentration": bool(self.optimize_doc_concentration),
-            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+            "preprocess_hash": _preprocess_hash(self),
         }
 
     def complete(self):
@@ -705,6 +822,177 @@ class RunLDAInference(luigi.Task):
         return luigi.LocalTarget(self._config_path())
 
 
+class InferLDASweep(luigi.Task):
+    """Inference analogue of ``TrainLDASweep``: score every K's model in
+    one Spark session.
+
+    Loads ``vector_model`` and caches ``features.parquet`` once, then for
+    each K loads ``k{K}/lda_model``, writes
+    ``k{K}/docTopicDistribution_lda.parquet`` + ``topicWords_lda.txt`` and
+    a per-K ``_inference_config.json`` **byte-identical** to what a per-K
+    ``RunLDAInference`` would write. That identity lets the per-K
+    ``RunLDAInference`` (which ``PlotResults`` and the sweep reach via
+    ``_infer_requirement``) be satisfied without ever running — one
+    inference node, no per-K JVM or features re-read.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    k_values = luigi.ListParameter()
+    preprocess_path = luigi.OptionalParameter(default=None)
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
+
+    def _preprocess_path(self):
+        return self.preprocess_path or self.output_path
+
+    def _k_dir(self, k):
+        return os.path.join(self.output_path, f"k{int(k)}")
+
+    def _infer_config_path(self, k):
+        return os.path.join(self._k_dir(k), "_inference_config.json")
+
+    def _infer_config_dict(self, k):
+        # MUST stay byte-identical to RunLDAInference._config_dict for
+        # this K (output_path is absent there, so the per-K dir doesn't
+        # matter — only params + upstream preprocess hash do).
+        return {
+            "task": "RunLDAInference",
+            "num_topics": int(k),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
+            "preprocess_hash": _preprocess_hash(self),
+        }
+
+    def complete(self):
+        for k in self.k_values:
+            out = os.path.join(
+                self._k_dir(k), "docTopicDistribution_lda.parquet"
+            )
+            if not os.path.exists(out):
+                return False
+            if not _stamp_matches(
+                self._infer_config_path(k), self._infer_config_dict(k)
+            ):
+                return False
+        return True
+
+    def requires(self):
+        return TrainLDASweep(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            k_values=self.k_values,
+            preprocess_path=self.preprocess_path,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
+            seed=self.seed,
+            max_iter=self.max_iter,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+            learning_offset=self.learning_offset,
+            learning_decay=self.learning_decay,
+            subsampling_rate=self.subsampling_rate,
+            optimize_doc_concentration=self.optimize_doc_concentration,
+        )
+
+    def run(self):
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+            preprocess = self._preprocess_path()
+            vector_model = CountVectorizerModel.load(
+                os.path.join(preprocess, "vector_model")
+            )
+            vocab = vector_model.vocabulary
+            if not vocab:
+                raise ValueError("Empty CountVectorizer vocabulary.")
+
+            # Cache the feature matrix once; every K's transform reuses
+            # it instead of the old per-K parquet re-read + fresh JVM.
+            features = spark.read.parquet(
+                os.path.join(preprocess, "features.parquet")
+            ).cache()
+            try:
+                features.count()
+                for k in self.k_values:
+                    k = int(k)
+                    k_dir = self._k_dir(k)
+                    os.makedirs(k_dir, exist_ok=True)
+                    lda_model = LocalLDAModel.load(
+                        os.path.join(k_dir, "lda_model")
+                    )
+
+                    topics = lda_model.describeTopics(maxTermsPerTopic=100)
+                    topic_words = {
+                        row.topic: [vocab[i] for i in row.termIndices]
+                        for row in topics.collect()
+                    }
+                    pd.DataFrame(
+                        list(topic_words.items()), columns=["Topic", "Words"]
+                    ).to_csv(
+                        os.path.join(k_dir, "topicWords_lda.txt"), index=False
+                    )
+
+                    # Stay in Spark; array_position is 1-indexed.
+                    scored = (
+                        lda_model.transform(features)
+                        .select(
+                            "docid",
+                            vector_to_array("topicDistribution").alias("td"),
+                        )
+                        .withColumn(
+                            "highest_topic",
+                            (
+                                F.array_position(
+                                    F.col("td"), F.array_max(F.col("td"))
+                                )
+                                - 1
+                            ).cast("int"),
+                        )
+                    )
+                    projected = scored.select(
+                        F.col("docid"),
+                        F.col("highest_topic"),
+                        *[
+                            F.col("td")[i].alias(f"topic_{i}")
+                            for i in range(k)
+                        ],
+                    )
+                    projected.write.mode("overwrite").parquet(
+                        os.path.join(k_dir, "docTopicDistribution_lda.parquet")
+                    )
+                    _write_stamp(
+                        self._infer_config_path(k),
+                        self._infer_config_dict(k),
+                    )
+                    print(f"Inference completed (k={k}).")
+            finally:
+                features.unpersist()
+
+    def output(self):
+        return [
+            luigi.LocalTarget(self._infer_config_path(k))
+            for k in self.k_values
+        ]
+
+
 class EvaluateLDAModel(luigi.Task):
     """Doc-level NPMI coherence + topic diversity for one trained LDA model.
 
@@ -752,7 +1040,7 @@ class EvaluateLDAModel(luigi.Task):
             "learning_decay": float(self.learning_decay),
             "subsampling_rate": float(self.subsampling_rate),
             "optimize_doc_concentration": bool(self.optimize_doc_concentration),
-            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+            "preprocess_hash": _preprocess_hash(self),
         }
 
     def complete(self):
@@ -777,9 +1065,9 @@ class EvaluateLDAModel(luigi.Task):
             vector_model = CountVectorizerModel.load(
                 os.path.join(preprocess, "vector_model")
             )
-            # Read the phrased tokens FitLDAPreprocessing already
-            # materialized — same corpus the model fit on, no need to
-            # re-run _analyze_udf or apply_phrases per K.
+            # Read the phrased tokens MinePhrases already materialized —
+            # same corpus the model fit on, no need to re-run
+            # _analyze_udf or apply_phrases per K.
             phrased = spark.read.parquet(
                 os.path.join(preprocess, "tokens_phrased.parquet")
             )
@@ -880,7 +1168,7 @@ class PlotResults(luigi.Task):
             "learning_decay": float(self.learning_decay),
             "subsampling_rate": float(self.subsampling_rate),
             "optimize_doc_concentration": bool(self.optimize_doc_concentration),
-            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+            "preprocess_hash": _preprocess_hash(self),
         }
 
     def complete(self):
@@ -893,26 +1181,7 @@ class PlotResults(luigi.Task):
         return _stamp_matches(self._config_path(), self._config_dict())
 
     def requires(self):
-        return RunLDAInference(
-            input_path=self.input_path,
-            output_path=self.output_path,
-            num_topics=self.num_topics,
-            preprocess_path=self.preprocess_path,
-            date=self.date,
-            sample_fraction=self.sample_fraction,
-            min_df=self.min_df,
-            max_df=self.max_df,
-            vocab_size=self.vocab_size,
-            seed=self.seed,
-            max_iter=self.max_iter,
-            phrases_min_count=self.phrases_min_count,
-            phrases_threshold=self.phrases_threshold,
-            learning_offset=self.learning_offset,
-            learning_decay=self.learning_decay,
-            subsampling_rate=self.subsampling_rate,
-            optimize_doc_concentration=self.optimize_doc_concentration,
-            k_values=self.k_values,
-        )
+        return _infer_requirement(self)
 
     def run(self):
         with spark_resource() as spark:
@@ -1059,7 +1328,7 @@ class AggregateLDASweep(luigi.Task):
             "learning_decay": float(self.learning_decay),
             "subsampling_rate": float(self.subsampling_rate),
             "optimize_doc_concentration": bool(self.optimize_doc_concentration),
-            "preprocess_hash": _read_preprocess_hash(self._preprocess_path()),
+            "preprocess_hash": _preprocess_hash(self),
         }
 
     def complete(self):
@@ -1069,7 +1338,7 @@ class AggregateLDASweep(luigi.Task):
 
     def requires(self):
         preprocess = self._preprocess_path()
-        return [
+        evals = [
             EvaluateLDAModel(
                 input_path=self.input_path,
                 output_path=os.path.join(self.output_path, f"k{int(k)}"),
@@ -1092,6 +1361,29 @@ class AggregateLDASweep(luigi.Task):
             )
             for k in self.k_values
         ]
+        # Also materialize per-K doc–topic distributions for the
+        # forthcoming retrieval-augmentation work. One InferLDASweep node
+        # (deduped with the TrainLDASweep the evals already route to).
+        infer = InferLDASweep(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            k_values=self.k_values,
+            preprocess_path=preprocess,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
+            seed=self.seed,
+            max_iter=self.max_iter,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+            learning_offset=self.learning_offset,
+            learning_decay=self.learning_decay,
+            subsampling_rate=self.subsampling_rate,
+            optimize_doc_concentration=self.optimize_doc_concentration,
+        )
+        return evals + [infer]
 
     def run(self):
         with spark_resource() as spark:
