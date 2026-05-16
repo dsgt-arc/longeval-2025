@@ -54,6 +54,13 @@ def get_spark(
         .config("spark.local.dir", local_dir)
         # Disable Hive to prevent classpath errors
         .config("spark.sql.catalogImplementation", "in-memory")
+        # The LDA pipeline materializes a fat array<string> column
+        # (tokens_phrased): at full-corpus scale a single 4096-row
+        # vectorized-reader batch needs a >32MB contiguous buffer and
+        # OOMs regardless of total heap or core count. Row-wise reads
+        # have no such batch allocation; the pipeline is IO/shuffle-
+        # bound so the throughput cost is negligible.
+        .config("spark.sql.parquet.enableVectorizedReader", "false")
     )
     for k, v in kwargs.items():
         builder = builder.config(k, v)
