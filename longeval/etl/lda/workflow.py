@@ -6,6 +6,7 @@ task here opens its own ``spark_resource()`` context.
 """
 
 import functools
+import glob
 import hashlib
 import json
 import os
@@ -19,7 +20,6 @@ from pyspark.ml.feature import CountVectorizer, CountVectorizerModel, StopWordsR
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql.types import ArrayType, StringType
 from pyspark.sql import functions as F
-from pyspark.sql.functions import udf
 from sklearn.decomposition import PCA
 from sklearn.random_projection import GaussianRandomProjection
 from typing_extensions import Annotated
@@ -206,26 +206,69 @@ def _infer_requirement(task):
 
 
 def _build_lucene_fr_analyzer():
-    """Return a fresh Lucene FR analyzer (lowercase + Snowball + FR stops)."""
+    """Return a fresh Lucene FR analyzer (lowercase + Snowball + FR stops).
+
+    Driver-only: used once by ``_build_stop_stems`` to derive stopword
+    stems. The per-row corpus tokenization no longer goes through this
+    pyjnius path — see the native SQL UDF below. Boots one driver JVM,
+    not one per Spark worker, so it is not the memory multiplier the old
+    ``_analyze`` UDF was.
+    """
     from pyserini.analysis import Analyzer, get_lucene_analyzer
 
     return Analyzer(get_lucene_analyzer(language="fr"))
 
 
-# Per-worker Lucene analyzer singleton; the JVM via pyjnius boots once per
-# worker process and is reused across all rows on that worker.
-_ANALYZER = None
+_ANALYZER_UDF_NAME = "lucene_fr_analyze"
 
 
-def _analyze(text):
-    """Lucene-French analyze: lowercase + Snowball stem + French stopwords."""
-    global _ANALYZER
-    if _ANALYZER is None:
-        _ANALYZER = _build_lucene_fr_analyzer()
-    return _ANALYZER.analyze(text or "")
+def _analyzer_jars() -> str:
+    """Comma-separated ``spark.jars`` for the native FR analyzer UDF: our
+    thin jar + the anserini fatjar pyserini ships.
+
+    The fatjar bundles the exact ``FrenchAnalyzer`` + ``AnalyzerUtils``
+    bytecode the old pyjnius path called, so executor-side tokenization
+    is byte-identical — equivalence by shared bytecode, not by a
+    reimplementation.
+    """
+    import pyserini
+
+    our_jar = os.path.normpath(
+        os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "jvm",
+            "longeval-analyzer.jar",
+        )
+    )
+    if not os.path.exists(our_jar):
+        raise FileNotFoundError(
+            f"Native analyzer jar missing: {our_jar}. Build it once with "
+            "`bash jvm/build.sh` (needs JAVA_HOME; .env has it)."
+        )
+    fatjars = glob.glob(
+        os.path.join(
+            os.path.dirname(pyserini.__file__),
+            "resources", "jars", "anserini-*-fatjar.jar",
+        )
+    )
+    if not fatjars:
+        raise FileNotFoundError(
+            "anserini fatjar not found under the pyserini package."
+        )
+    return f"{our_jar},{fatjars[0]}"
 
 
-_analyze_udf = udf(_analyze, ArrayType(StringType()))
+def _register_fr_analyzer(spark) -> None:
+    """Register the executor-JVM Lucene-FR tokenizer as a SQL function.
+
+    Replaces the old ``_analyze`` UDF, which booted an embedded pyjnius
+    JVM in *each* Python worker (the local[N] memory multiplier). This
+    runs in the single executor JVM that already exists.
+    """
+    spark.udf.registerJavaFunction(
+        _ANALYZER_UDF_NAME,
+        "com.longeval.LuceneFrAnalyzerUDF",
+        ArrayType(StringType()),
+    )
 
 
 def _build_stop_stems() -> list[str]:
@@ -254,7 +297,8 @@ class MinePhrases(luigi.Task):
     """Analyze + NPMI-bigram the corpus — the expensive, vocab-independent
     half of preprocessing.
 
-    The per-row Lucene/pyjnius analyze is the pipeline's dominant cost and
+    The per-row Lucene analyze (a native executor-JVM SQL UDF — see
+    ``_register_fr_analyzer``) is the pipeline's dominant compute cost and
     depends only on date/sample/phrase params, never on vocab pruning.
     Splitting it out so a min_df/max_df/vocab_size change reuses this pass
     instead of re-running it. Writes into the shared ``<root>/preprocess``
@@ -292,8 +336,9 @@ class MinePhrases(luigi.Task):
         return _stamp_matches(self._config_path(), self._config_dict())
 
     def run(self):
-        with spark_resource() as spark:
+        with spark_resource(**{"spark.jars": _analyzer_jars()}) as spark:
             spark.sparkContext.setLogLevel("ERROR")
+            _register_fr_analyzer(spark)
 
             collection = ParquetCollection(spark, self.input_path)
             docs = (
@@ -318,7 +363,9 @@ class MinePhrases(luigi.Task):
                 remover.transform(
                     docs.select(
                         "docid",
-                        _analyze_udf(F.col("contents")).alias("tokens_raw"),
+                        F.expr(
+                            f"{_ANALYZER_UDF_NAME}(contents)"
+                        ).alias("tokens_raw"),
                     )
                 )
                 .withColumn(
@@ -1066,8 +1113,8 @@ class EvaluateLDAModel(luigi.Task):
                 os.path.join(preprocess, "vector_model")
             )
             # Read the phrased tokens MinePhrases already materialized —
-            # same corpus the model fit on, no need to re-run
-            # _analyze_udf or apply_phrases per K.
+            # same corpus the model fit on, no need to re-run the
+            # analyze UDF or apply_phrases per K.
             phrased = spark.read.parquet(
                 os.path.join(preprocess, "tokens_phrased.parquet")
             )
@@ -1286,10 +1333,11 @@ class AggregateLDASweep(luigi.Task):
     Replaces the former ``SweepLDAK`` wrapper; emits a single
     ``sweep_coherence.parquet`` so K-selection needs no manual globbing.
 
-    Tasks still run with the default Luigi ``workers=1``; the preprocess
-    analyze step boots an embedded Lucene JVM per Python worker, so
-    parallel K evaluation in one node would multiply memory — see
-    ``longeval.spark``.
+    Tasks still run with the default Luigi ``workers=1`` (one Spark
+    session per task; concurrent sessions would contend for driver
+    memory). The preprocess analyze is now a native executor-JVM UDF, so
+    it no longer boots an embedded Lucene JVM per Python worker — see
+    ``_register_fr_analyzer``.
     """
 
     input_path = luigi.Parameter()

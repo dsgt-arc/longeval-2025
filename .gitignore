@@ -183,3 +183,6 @@ data/
 
 .scratch
 embed-logs/
+
+# JVM analyzer UDF build artifact (reproducible via `bash jvm/build.sh`)
+jvm/longeval-analyzer.jar
