@@ -145,12 +145,19 @@ def fit_phrases(
             # The frequency cut is a percentile of the count
             # distribution over the high-npmi subset, derived from the
             # corpus at fit time -- scale-invariant, unlike an absolute
-            # floor. approxQuantile is one Spark action; caching
+            # floor. relativeError MUST be 0.0 (exact): approxQuantile's
+            # guarantee is only |rank/N - q| <= relativeError, so at
+            # q=0.999 any relativeError >= 1e-3 lets it legally return a
+            # value anywhere up to the maximum -- and in the extreme tail
+            # counts jump from ~4e4 to ~1e6, so it collapses the cut onto
+            # the single largest phrase (observed: 1 of 1.6M removed).
+            # The npmi>=ceiling subset is tiny (~9e4 rows here) so exact
+            # is cheap and also deterministic across core counts. Caching
             # ``scored`` keeps the bigram/join pipeline from recomputing
-            # for the subsequent write. Empty high-npmi subset ->
-            # approxQuantile returns [] -> no rejection.
+            # for the subsequent write. Empty subset -> [] -> no
+            # rejection.
             hi = scored.filter(F.col("npmi") >= npmi_ceiling)
-            q = hi.approxQuantile("count", [count_pctile / 100.0], 1e-3)
+            q = hi.approxQuantile("count", [count_pctile / 100.0], 0.0)
             cut = q[0] if q else None
             out = scored
             if cut is not None:
