@@ -7,6 +7,13 @@ pair set and greedy-joins adjacent tokens in a Python UDF.
 
 NPMI(a, b) = log(p(a, b) / (p(a) * p(b))) / -log(p(a, b))
            bounded in [-1, 1]; 1 means a and b only ever appear together.
+
+Surviving bigrams are additionally screened for *degenerate fixed-list*
+artifacts: a pair that is near-perfectly collocated (npmi -> 1) and in the
+extreme upper tail of co-occurrence frequency is a scraped UI dropdown
+chain (country / currency / car-brand / departement selectors), not a
+phrase. The frequency cut is corpus-derived (a percentile of the count
+distribution over the high-npmi subset), so it is scale-invariant.
 """
 
 from __future__ import annotations
@@ -23,6 +30,8 @@ def fit_phrases(
     tokens_col: str = "tokens",
     min_count: int = 20,
     threshold: float = 0.5,
+    npmi_ceiling: float = 0.95,
+    count_pctile: float = 99.9,
 ) -> None:
     """Mine NPMI bigrams over ``tokens_df`` and write to ``output_path``.
 
@@ -39,6 +48,16 @@ def fit_phrases(
         tokens_col: Name of the token-array column on ``tokens_df``.
         min_count: Drop unigrams and bigrams seen fewer times than this.
         threshold: Minimum NPMI for a bigram to survive.
+        npmi_ceiling: A surviving pair with ``npmi >= npmi_ceiling`` is a
+            degenerate-list *candidate* (only rejected if also in the
+            count tail). Set ``> 1.0`` to disable the screen entirely
+            (no pair can exceed npmi 1, so nothing is rejected).
+        count_pctile: Percentile (0-100) of the ``count`` distribution
+            over the ``npmi >= npmi_ceiling`` subset; candidates whose
+            count is at/above that percentile are rejected as scraped
+            dropdown-list chains. Corpus-derived at fit time, hence
+            scale-invariant (an absolute floor would differ between
+            ``sample_fraction`` 0.05 and 1.0).
     """
     tokens = F.col(tokens_col)
     spark = tokens_df.sparkSession
@@ -113,9 +132,41 @@ def fit_phrases(
             )
             .filter(F.col("npmi") >= threshold)
             .select("a", "b", "npmi", F.col("ab_count").alias("count"))
-            .orderBy(F.col("npmi").desc())
+            .cache()
         )
-        scored.write.mode("overwrite").parquet(output_path)
+        try:
+            # Degenerate fixed-list rejection. A pair that is
+            # near-perfectly collocated (npmi -> 1) *and* in the extreme
+            # upper tail of co-occurrence frequency is a scraped UI
+            # dropdown chain (country / currency / car-brand /
+            # departement selectors), not a meaningful phrase. Real
+            # frequent phrases sit at moderate npmi (promiscuous
+            # component words); real high-npmi phrases are low-count.
+            # The frequency cut is a percentile of the count
+            # distribution over the high-npmi subset, derived from the
+            # corpus at fit time -- scale-invariant, unlike an absolute
+            # floor. approxQuantile is one Spark action; caching
+            # ``scored`` keeps the bigram/join pipeline from recomputing
+            # for the subsequent write. Empty high-npmi subset ->
+            # approxQuantile returns [] -> no rejection.
+            hi = scored.filter(F.col("npmi") >= npmi_ceiling)
+            q = hi.approxQuantile("count", [count_pctile / 100.0], 1e-3)
+            cut = q[0] if q else None
+            out = scored
+            if cut is not None:
+                out = scored.filter(
+                    ~(
+                        (F.col("npmi") >= npmi_ceiling)
+                        & (F.col("count") >= cut)
+                    )
+                )
+            (
+                out.orderBy(F.col("npmi").desc())
+                .write.mode("overwrite")
+                .parquet(output_path)
+            )
+        finally:
+            scored.unpersist()
     finally:
         unigrams_all.unpersist()
 

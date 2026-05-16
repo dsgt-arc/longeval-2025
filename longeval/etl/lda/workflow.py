@@ -68,6 +68,8 @@ def _phrases_hash(task) -> str:
             "sample_fraction": float(task.sample_fraction),
             "phrases_min_count": int(task.phrases_min_count),
             "phrases_threshold": float(task.phrases_threshold),
+            "phrases_npmi_ceiling": float(task.phrases_npmi_ceiling),
+            "phrases_count_pctile": float(task.phrases_count_pctile),
         }
     )
 
@@ -93,6 +95,8 @@ def _preprocess_hash(task) -> str:
             "vocab_size": int(task.vocab_size),
             "phrases_min_count": int(task.phrases_min_count),
             "phrases_threshold": float(task.phrases_threshold),
+            "phrases_npmi_ceiling": float(task.phrases_npmi_ceiling),
+            "phrases_count_pctile": float(task.phrases_count_pctile),
         }
     )
 
@@ -149,6 +153,8 @@ def _train_requirement(task):
         max_iter=task.max_iter,
         phrases_min_count=task.phrases_min_count,
         phrases_threshold=task.phrases_threshold,
+        phrases_npmi_ceiling=task.phrases_npmi_ceiling,
+        phrases_count_pctile=task.phrases_count_pctile,
         learning_offset=task.learning_offset,
         learning_decay=task.learning_decay,
         subsampling_rate=task.subsampling_rate,
@@ -190,6 +196,8 @@ def _infer_requirement(task):
         max_iter=task.max_iter,
         phrases_min_count=task.phrases_min_count,
         phrases_threshold=task.phrases_threshold,
+        phrases_npmi_ceiling=task.phrases_npmi_ceiling,
+        phrases_count_pctile=task.phrases_count_pctile,
         learning_offset=task.learning_offset,
         learning_decay=task.learning_decay,
         subsampling_rate=task.subsampling_rate,
@@ -315,6 +323,8 @@ class MinePhrases(luigi.Task):
     sample_fraction = luigi.FloatParameter(default=0.3)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
 
     def _config_dict(self):
         return {
@@ -324,6 +334,8 @@ class MinePhrases(luigi.Task):
             "sample_fraction": float(self.sample_fraction),
             "phrases_min_count": int(self.phrases_min_count),
             "phrases_threshold": float(self.phrases_threshold),
+            "phrases_npmi_ceiling": float(self.phrases_npmi_ceiling),
+            "phrases_count_pctile": float(self.phrases_count_pctile),
         }
 
     def _config_path(self):
@@ -393,6 +405,8 @@ class MinePhrases(luigi.Task):
                     tokens_col="tokens",
                     min_count=self.phrases_min_count,
                     threshold=self.phrases_threshold,
+                    npmi_ceiling=self.phrases_npmi_ceiling,
+                    count_pctile=self.phrases_count_pctile,
                 )
                 phrases_df = spark.read.parquet(phrases_path)
 
@@ -437,6 +451,8 @@ class BuildFeatures(luigi.Task):
     vocab_size = luigi.IntParameter(default=20_000)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
 
     def requires(self):
         return MinePhrases(
@@ -446,6 +462,8 @@ class BuildFeatures(luigi.Task):
             sample_fraction=self.sample_fraction,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+            phrases_count_pctile=self.phrases_count_pctile,
         )
 
     def _config_dict(self):
@@ -544,6 +562,8 @@ class TrainLDAModel(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
     subsampling_rate = luigi.FloatParameter(default=0.05)
@@ -585,6 +605,8 @@ class TrainLDAModel(luigi.Task):
             vocab_size=self.vocab_size,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+            phrases_count_pctile=self.phrases_count_pctile,
         )
 
     def run(self):
@@ -658,6 +680,8 @@ class TrainLDASweep(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
     subsampling_rate = luigi.FloatParameter(default=0.05)
@@ -710,6 +734,8 @@ class TrainLDASweep(luigi.Task):
             vocab_size=self.vocab_size,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+            phrases_count_pctile=self.phrases_count_pctile,
         )
 
     def run(self):
@@ -780,6 +806,8 @@ class RunLDAInference(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
     subsampling_rate = luigi.FloatParameter(default=0.05)
@@ -900,6 +928,8 @@ class InferLDASweep(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
     subsampling_rate = luigi.FloatParameter(default=0.05)
@@ -958,6 +988,8 @@ class InferLDASweep(luigi.Task):
             max_iter=self.max_iter,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+            phrases_count_pctile=self.phrases_count_pctile,
             learning_offset=self.learning_offset,
             learning_decay=self.learning_decay,
             subsampling_rate=self.subsampling_rate,
@@ -1067,6 +1099,8 @@ class EvaluateLDAModel(luigi.Task):
     top_n = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
     subsampling_rate = luigi.FloatParameter(default=0.05)
@@ -1194,6 +1228,8 @@ class PlotResults(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     plot_sample_size = luigi.IntParameter(default=50_000)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
@@ -1295,6 +1331,8 @@ class Workflow(luigi.WrapperTask):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     plot_sample_size = luigi.IntParameter(default=50_000)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
@@ -1315,6 +1353,8 @@ class Workflow(luigi.WrapperTask):
             max_iter=self.max_iter,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+            phrases_count_pctile=self.phrases_count_pctile,
             learning_offset=self.learning_offset,
             learning_decay=self.learning_decay,
             subsampling_rate=self.subsampling_rate,
@@ -1356,6 +1396,8 @@ class AggregateLDASweep(luigi.Task):
     max_iter = luigi.IntParameter(default=10)
     phrases_min_count = luigi.IntParameter(default=20)
     phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
     learning_offset = luigi.FloatParameter(default=1024.0)
     learning_decay = luigi.FloatParameter(default=0.51)
     subsampling_rate = luigi.FloatParameter(default=0.05)
@@ -1406,6 +1448,8 @@ class AggregateLDASweep(luigi.Task):
                 max_iter=self.max_iter,
                 phrases_min_count=self.phrases_min_count,
                 phrases_threshold=self.phrases_threshold,
+                phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+                phrases_count_pctile=self.phrases_count_pctile,
                 learning_offset=self.learning_offset,
                 learning_decay=self.learning_decay,
                 subsampling_rate=self.subsampling_rate,
@@ -1430,6 +1474,8 @@ class AggregateLDASweep(luigi.Task):
             max_iter=self.max_iter,
             phrases_min_count=self.phrases_min_count,
             phrases_threshold=self.phrases_threshold,
+            phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+            phrases_count_pctile=self.phrases_count_pctile,
             learning_offset=self.learning_offset,
             learning_decay=self.learning_decay,
             subsampling_rate=self.subsampling_rate,
@@ -1499,6 +1545,20 @@ def main(
         phrases_threshold: Annotated[
             float, typer.Option(help="Min NPMI for a bigram to survive")
         ] = 0.5,
+        phrases_npmi_ceiling: Annotated[
+            float,
+            typer.Option(
+                help="Degenerate-list npmi ceiling; pairs >= this AND in "
+                "the count tail are dropped (> 1.0 disables the screen)"
+            ),
+        ] = 0.95,
+        phrases_count_pctile: Annotated[
+            float,
+            typer.Option(
+                help="Percentile (0-100) of the count distribution over "
+                "the npmi>=ceiling subset; at/above it = dropped"
+            ),
+        ] = 99.9,
         plot_sample_size: Annotated[
             int, typer.Option(help="Driver-side doc cap for PCA/RP plots")
         ] = 50_000,
@@ -1538,6 +1598,8 @@ def main(
             max_iter=max_iter,
             phrases_min_count=phrases_min_count,
             phrases_threshold=phrases_threshold,
+            phrases_npmi_ceiling=phrases_npmi_ceiling,
+            phrases_count_pctile=phrases_count_pctile,
             plot_sample_size=plot_sample_size,
             learning_offset=learning_offset,
             learning_decay=learning_decay,
@@ -1586,6 +1648,20 @@ def sweep_main(
         phrases_threshold: Annotated[
             float, typer.Option(help="Min NPMI for a bigram to survive")
         ] = 0.5,
+        phrases_npmi_ceiling: Annotated[
+            float,
+            typer.Option(
+                help="Degenerate-list npmi ceiling; pairs >= this AND in "
+                "the count tail are dropped (> 1.0 disables the screen)"
+            ),
+        ] = 0.95,
+        phrases_count_pctile: Annotated[
+            float,
+            typer.Option(
+                help="Percentile (0-100) of the count distribution over "
+                "the npmi>=ceiling subset; at/above it = dropped"
+            ),
+        ] = 99.9,
         learning_offset: Annotated[
             float, typer.Option(help="Online LDA learningOffset (down-weights early iters)")
         ] = 1024.0,
@@ -1625,6 +1701,8 @@ def sweep_main(
             max_iter=max_iter,
             phrases_min_count=phrases_min_count,
             phrases_threshold=phrases_threshold,
+            phrases_npmi_ceiling=phrases_npmi_ceiling,
+            phrases_count_pctile=phrases_count_pctile,
             learning_offset=learning_offset,
             learning_decay=learning_decay,
             subsampling_rate=subsampling_rate,
