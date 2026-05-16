@@ -1,5 +1,7 @@
 """Utilities to load various collections of datasets."""
 
+import glob
+import os
 from pathlib import Path
 from pyspark.sql import functions as F
 
@@ -247,19 +249,59 @@ class TrecCollection(RawCollection):
         super().__init__(spark, path)
         self.dates = dates
 
+    # Same device as the raw release (/mnt/data/*) so the mirror below
+    # can hardlink, not copy. Overridable for tests.
+    _RELINK_ROOT = "/mnt/data/tmp/longeval-trec-relink"
+
+    def _resolve_date_dirs(self):
+        """[(date, dir)] for the requested dates, or every Trec/*_fr dir."""
+        if self.dates:
+            return [(d, f"{self.path}/Trec/{d}_fr") for d in self.dates]
+        base = f"{self.path}/Trec"
+        out = []
+        for p in sorted(glob.glob(f"{base}/*_fr")):
+            d = os.path.basename(p).rsplit("_fr", 1)[0]
+            out.append((d, p))
+        return out
+
+    def _trec_read_path(self, date, src_dir):
+        """Path to feed Spark for one date's TREC files.
+
+        The release is irregular: 2022-06 is Trec/<d>_fr/*.trec flat,
+        2022-07..2023-01 nest *.trec under collection/, and 2023-02 nests
+        files misnamed *.jsonl.gz that are byte-for-byte TREC XML (not
+        JSON, not gzip — verified). Spark's text reader decompresses by
+        the .gz *suffix* and dies "not a gzip file"; restricting
+        io.compression.codecs does NOT stop it. So for any dir holding
+        non-.trec files we mirror every file as a hardlink with a .trec
+        name into a scratch dir (same /mnt/data device → instant, no
+        copy, and Hadoop sees plain files — no codec, no symlink-follow
+        ambiguity) and read that. All-.trec dirs are read in place, so
+        2022-06 stays byte-stable vs the prior glob.
+        """
+        files = [
+            f for f in glob.glob(f"{src_dir}/**/*", recursive=True)
+            if os.path.isfile(f)
+        ]
+        if files and all(f.endswith(".trec") for f in files):
+            return src_dir
+        mirror = os.path.join(self._RELINK_ROOT, f"{date}_fr")
+        os.makedirs(mirror, exist_ok=True)
+        for f in files:
+            name = os.path.basename(f)
+            link = os.path.join(
+                mirror, name if name.endswith(".trec") else f"{name}.trec"
+            )
+            if not os.path.exists(link):
+                os.link(f, link)
+        return mirror
+
     @property
     def documents(self):
-        # The release is irregular: 2022-06 has Trec/<d>_fr/*.trec flat,
-        # while 2022-07..2023-01 nest them under Trec/<d>_fr/collection/.
-        # recursiveFileLookup + a *.trec pathGlobFilter handles both from
-        # the per-date dir (which always exists), and naturally skips
-        # non-TREC slices (e.g. 2023-02 ships .jsonl.gz). File discovery
-        # changes; the split/regex parsing below is unchanged, so the
-        # 2022-06 output is byte-stable vs the prior glob.
-        if self.dates:
-            paths = [f"{self.path}/Trec/{d}_fr" for d in self.dates]
-        else:
-            paths = [f"{self.path}/Trec"]
+        paths = [
+            self._trec_read_path(d, src)
+            for d, src in self._resolve_date_dirs()
+        ]
         raw = (
             self.spark.read.option("recursiveFileLookup", "true")
             .option("pathGlobFilter", "*.trec")

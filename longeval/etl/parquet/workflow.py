@@ -13,11 +13,14 @@ import typer
 from typing_extensions import Annotated
 from longeval.luigi import luigi_kwargs
 
-# TREC-XML train slices (2022-06..2023-01). 2023-02 ships .jsonl.gz and
-# the 2023-03..2023-08 test slices are JSON — those are a separate
-# (deferred) JSON-reader ingest, not this path.
+# All nine TREC-XML train slices (2022-06..2023-02). 2023-02's files are
+# misnamed *.jsonl.gz but are actually TREC XML (see TrecCollection), so
+# they ingest through this same path — this is the full 9-slice French
+# train corpus the working-notes paper reports (~19M raw docs). The
+# 2023-03..2023-08 *test* slices are a separate (deferred) ingest.
 TREC_TRAIN_DATES = (
-    "2022-06,2022-07,2022-08,2022-09,2022-10,2022-11,2022-12,2023-01"
+    "2022-06,2022-07,2022-08,2022-09,2022-10,2022-11,2022-12,2023-01,"
+    "2023-02"
 )
 
 

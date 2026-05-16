@@ -341,11 +341,15 @@ class MinePhrases(luigi.Task):
             _register_fr_analyzer(spark)
 
             collection = ParquetCollection(spark, self.input_path)
-            docs = (
-                collection.documents
-                .filter(F.col("date") == self.date)
-                .sample(fraction=self.sample_fraction, seed=42)
-            )
+            docs = collection.documents
+            # date="all" pools every slice in the parquet into one
+            # cross-slice corpus; any other value selects a single
+            # slice. "all" threads through every stamp / _preprocess_hash
+            # exactly like a real date, so pooled artifacts never collide
+            # with per-date ones.
+            if str(self.date) != "all":
+                docs = docs.filter(F.col("date") == self.date)
+            docs = docs.sample(fraction=self.sample_fraction, seed=42)
             # Cleanup: Lucene FR analyzer -> StopWordsRemover (NLTK FR+EN
             # stems) -> length/numeric filter. The extra StopWordsRemover
             # pass exists because the analyzer's built-in FR stops don't
