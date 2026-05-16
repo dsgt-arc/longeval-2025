@@ -249,14 +249,29 @@ class TrecCollection(RawCollection):
 
     @property
     def documents(self):
+        # The release is irregular: 2022-06 has Trec/<d>_fr/*.trec flat,
+        # while 2022-07..2023-01 nest them under Trec/<d>_fr/collection/.
+        # recursiveFileLookup + a *.trec pathGlobFilter handles both from
+        # the per-date dir (which always exists), and naturally skips
+        # non-TREC slices (e.g. 2023-02 ships .jsonl.gz). File discovery
+        # changes; the split/regex parsing below is unchanged, so the
+        # 2022-06 output is byte-stable vs the prior glob.
         if self.dates:
-            globs = [f"{self.path}/Trec/{d}_fr/*.trec" for d in self.dates]
+            paths = [f"{self.path}/Trec/{d}_fr" for d in self.dates]
         else:
-            globs = [f"{self.path}/Trec/*_fr/*.trec"]
-        raw = self.spark.read.text(globs, lineSep="</DOC>", wholetext=False)
+            paths = [f"{self.path}/Trec"]
+        raw = (
+            self.spark.read.option("recursiveFileLookup", "true")
+            .option("pathGlobFilter", "*.trec")
+            .text(paths, lineSep="</DOC>", wholetext=False)
+        )
         docno = F.regexp_extract(F.col("value"), r"<DOCNO>([^<]+)</DOCNO>", 1)
+        # Bound the capture at </TEXT>; fall back to end-of-record if a
+        # record is truncated (keeps the old leniency — no new silent
+        # drops — while dropping the trailing </TEXT> the end-anchored
+        # form leaked into every doc's contents).
         text = F.regexp_extract(
-            F.col("value"), r"(?s)<TEXT>\s*(.*?)\s*$", 1
+            F.col("value"), r"(?s)<TEXT>\s*(.*?)\s*(?:</TEXT>|$)", 1
         )
         date = F.regexp_extract(F.input_file_name(), r"/(\d{4}-\d{2})_fr/", 1)
         return (
