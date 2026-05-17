@@ -18,16 +18,17 @@ from pyspark.ml.linalg import Vectors
 
 from longeval.etl.lda.workflow import (
     AggregateLDASweep,
+    AggregateTopicProportions,
     BuildFeatures,
     EvaluateLDAModel,
     InferLDASweep,
     MinePhrases,
     PlotResults,
     RunLDAInference,
+    TopicProportions,
     TrainLDAModel,
     TrainLDASweep,
     _build_lda,
-    _phrases_hash,
     _preprocess_hash,
 )
 from longeval.spark import spark_resource
@@ -66,8 +67,9 @@ def test_requires_routes_to_sweep_when_k_values_set():
 
 def test_all_per_k_evals_dedupe_onto_one_sweep_node():
     agg = AggregateLDASweep(input_path="/in", output_path="/out", k_values=[2, 3])
+    evals = [e for e in agg.requires() if isinstance(e, EvaluateLDAModel)]
     sweep_reqs = {
-        e.requires() for e in agg.requires()
+        e.requires() for e in evals
     }  # set => Luigi task identity
     assert len(sweep_reqs) == 1
     (only,) = sweep_reqs
@@ -105,12 +107,78 @@ def test_aggregate_pulls_one_infer_sweep_deduped_with_train():
     infers = [r for r in reqs if isinstance(r, InferLDASweep)]
     assert len(infers) == 1
     # InferLDASweep and every Eval route to the SAME TrainLDASweep node.
+    train_consumers = [
+        r for r in reqs if isinstance(r, (EvaluateLDAModel, InferLDASweep))
+    ]
     train_nodes = {
-        r.requires() for r in reqs
+        r.requires() for r in train_consumers
     }  # set => Luigi task identity
     assert len(train_nodes) == 1
     (only,) = train_nodes
     assert isinstance(only, TrainLDASweep)
+    # The registered AggregateTopicProportions reuses that same
+    # InferLDASweep node (no extra inference): every per-K
+    # TopicProportions routes to the sweep's one infer node.
+    (tp_agg,) = [r for r in reqs if isinstance(r, AggregateTopicProportions)]
+    assert {t.requires() for t in tp_agg.requires()} == set(infers)
+
+
+def _topicprop(**over):
+    base = dict(
+        input_path="/in",
+        output_path="/out/k3",
+        num_topics=3,
+        preprocess_path="/out/preprocess",
+    )
+    base.update(over)
+    return TopicProportions(**base)
+
+
+def test_topicproportions_routes_to_infer_sweep_when_k_values_set():
+    req = _topicprop(k_values=[2, 3]).requires()
+    assert isinstance(req, InferLDASweep)
+    assert req.output_path == "/out"  # parent of the shared preprocess dir
+    assert list(req.k_values) == [2, 3]
+
+
+def test_topicproportions_routes_to_single_k_inference_when_no_k_values():
+    req = _topicprop(k_values=None).requires()
+    assert isinstance(req, RunLDAInference)
+    assert not isinstance(req, InferLDASweep)
+    assert req.num_topics == 3
+
+
+def test_aggregate_topicproportions_dedupes_per_k_onto_one_infer_sweep():
+    agg = AggregateTopicProportions(
+        input_path="/in", output_path="/out", k_values=[2, 3]
+    )
+    reqs = agg.requires()
+    assert {type(r) for r in reqs} == {TopicProportions}
+    assert sorted(r.num_topics for r in reqs) == [2, 3]
+    # Every per-K TopicProportions routes to the SAME InferLDASweep node
+    # (Luigi task identity via set) — no per-K re-inference.
+    infer_nodes = {r.requires() for r in reqs}
+    assert len(infer_nodes) == 1
+    (infer,) = infer_nodes
+    assert isinstance(infer, InferLDASweep)
+    assert infer.output_path == "/out"
+    assert list(infer.k_values) == [2, 3]
+
+
+def test_aggregateldasweep_registers_topic_proportions_deduped():
+    # Registration invariant: a fresh sweep pulls AggregateTopicProportions,
+    # and its inference node is the SAME InferLDASweep the sweep already
+    # runs — so the proportion artifacts cost zero extra inference.
+    agg = AggregateLDASweep(
+        input_path="/in", output_path="/out", k_values=[2, 3]
+    )
+    reqs = agg.requires()
+    tp = [r for r in reqs if isinstance(r, AggregateTopicProportions)]
+    assert len(tp) == 1
+    sweep_infer = {r for r in reqs if isinstance(r, InferLDASweep)}
+    assert len(sweep_infer) == 1
+    tp_infer = {r.requires() for r in tp[0].requires()}
+    assert tp_infer == sweep_infer  # same Luigi node => deduped
 
 
 def test_infersweep_stamp_byte_identical_to_run_inference():
@@ -373,3 +441,90 @@ def test_infersweep_scores_all_k_and_satisfies_per_k_inference(tmp_path):
     with open(bad, "w") as f:
         json.dump({"task": "nope"}, f)
     assert infer.complete() is False
+
+
+def _write_doc_topic(spark, k_dir, k):
+    """Stage a docTopicDistribution_lda.parquet (docid keyed, no date —
+    exactly what InferLDASweep writes)."""
+    os.makedirs(k_dir, exist_ok=True)
+    rows = [
+        ("d0", 0.9, 0.1, 0),
+        ("d1", 0.2, 0.8, 1),
+        ("d2", 0.5, 0.5, 0),
+        ("d3", 0.3, 0.7, 1),
+    ]
+    schema = "docid string, topic_0 double, topic_1 double, highest_topic int"
+    spark.createDataFrame(rows, schema).write.mode("overwrite").parquet(
+        os.path.join(k_dir, "docTopicDistribution_lda.parquet")
+    )
+
+
+def _write_corpus(spark, corpus_root):
+    """Stage a Documents parquet ParquetCollection can read, with a
+    recurring docid across two slices (the longitudinal case)."""
+    rows = [
+        ("d0", "2022-06"), ("d1", "2022-06"), ("d2", "2022-06"),
+        ("d0", "2022-07"), ("d1", "2022-07"), ("d3", "2022-07"),
+    ]
+    spark.createDataFrame(rows, "docid string, date string").write.mode(
+        "overwrite"
+    ).partitionBy("date").parquet(os.path.join(corpus_root, "Documents"))
+
+
+def test_topicproportions_per_slice_and_aggregate_drift(tmp_path):
+    root = str(tmp_path / "sweep")
+    corpus = str(tmp_path / "corpus")
+    k_dir = os.path.join(root, "k2")
+    with spark_resource() as spark:
+        spark.sparkContext.setLogLevel("ERROR")
+        _write_doc_topic(spark, k_dir, 2)
+        _write_corpus(spark, corpus)
+
+    tp = TopicProportions(
+        input_path=corpus,
+        output_path=k_dir,
+        num_topics=2,
+        preprocess_path=os.path.join(root, "preprocess"),
+        date="all",
+    )
+    assert tp.complete() is False
+    tp.run()
+    assert tp.complete() is True
+
+    with spark_resource() as spark:
+        spark.sparkContext.setLogLevel("ERROR")
+        df = spark.read.parquet(tp._proportions_path())
+        assert set(df.columns) == {"k", "date", "topic", "mean_theta", "n_docs"}
+        recs = {(r["date"], r["topic"]): r for r in df.collect()}
+        # k * n_dates rows; each slice's theta sums to ~1; n_docs=3/slice.
+        assert df.count() == 2 * 2
+        for d in ("2022-06", "2022-07"):
+            s = sum(recs[(d, t)]["mean_theta"] for t in (0, 1))
+            assert abs(s - 1.0) < 1e-9
+            assert recs[(d, 0)]["n_docs"] == 3
+        # 06: docids d0,d1,d2 -> topic_0 = (0.9+0.2+0.5)/3
+        assert abs(recs[("2022-06", 0)]["mean_theta"] - 1.6 / 3) < 1e-9
+        # 07: d0,d1,d3 -> topic_0 = (0.9+0.2+0.3)/3 (recurring d0/d1 join)
+        assert abs(recs[("2022-07", 0)]["mean_theta"] - 1.4 / 3) < 1e-9
+
+    agg = AggregateTopicProportions(
+        input_path=corpus, output_path=root, k_values=[2], date="all"
+    )
+    assert agg.complete() is False
+    agg.run()
+    assert agg.complete() is True
+
+    with spark_resource() as spark:
+        spark.sparkContext.setLogLevel("ERROR")
+        prop = spark.read.parquet(agg._proportions_path())
+        assert prop.count() == 4 and set(prop.select("k").distinct().toPandas()["k"]) == {2}
+        drift = {
+            r["topic"]: r
+            for r in spark.read.parquet(agg._drift_path()).collect()
+        }
+        assert set(drift) == {0, 1}
+        t0 = drift[0]
+        assert t0["n_slices"] == 2
+        # topic_0 over [06=1.6/3, 07=1.4/3]: range and first->last delta.
+        assert abs(t0["range_theta"] - (1.6 / 3 - 1.4 / 3)) < 1e-9
+        assert abs(t0["delta_first_last"] - (1.4 / 3 - 1.6 / 3)) < 1e-9

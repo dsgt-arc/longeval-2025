@@ -1481,7 +1481,31 @@ class AggregateLDASweep(luigi.Task):
             subsampling_rate=self.subsampling_rate,
             optimize_doc_concentration=self.optimize_doc_concentration,
         )
-        return evals + [infer]
+        # Per-slice soft topic proportions + temporal drift. Its per-K
+        # TopicProportions route through the SAME InferLDASweep node as
+        # `infer` (deduped), so registering it here adds the proportion
+        # artifacts to every fresh sweep at zero extra inference cost.
+        topic_prop = AggregateTopicProportions(
+            input_path=self.input_path,
+            output_path=self.output_path,
+            k_values=self.k_values,
+            date=self.date,
+            sample_fraction=self.sample_fraction,
+            min_df=self.min_df,
+            max_df=self.max_df,
+            vocab_size=self.vocab_size,
+            seed=self.seed,
+            max_iter=self.max_iter,
+            phrases_min_count=self.phrases_min_count,
+            phrases_threshold=self.phrases_threshold,
+            phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+            phrases_count_pctile=self.phrases_count_pctile,
+            learning_offset=self.learning_offset,
+            learning_decay=self.learning_decay,
+            subsampling_rate=self.subsampling_rate,
+            optimize_doc_concentration=self.optimize_doc_concentration,
+        )
+        return evals + [infer, topic_prop]
 
     def run(self):
         with spark_resource() as spark:
