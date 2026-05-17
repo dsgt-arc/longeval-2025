@@ -14,6 +14,21 @@ extreme upper tail of co-occurrence frequency is a scraped UI dropdown
 chain (country / currency / car-brand / departement selectors), not a
 phrase. The frequency cut is corpus-derived (a percentile of the count
 distribution over the high-npmi subset), so it is scale-invariant.
+
+Documented structural limit (measured on the 16.3M-doc pooled corpus,
+do not re-derive): this screen only reaches pairs whose npmi is
+*near 1*. A second scrape tier -- month-archive chains
+(``janvi_decembr``, ``may_april``) and the lower-frequency country /
+currency dropdown rows -- has *moderate* npmi (0.6-0.94) despite
+counts up to ~760k, because its component tokens are promiscuous
+(month names appear in every dated doc; "poland"/"czech" occur in
+ordinary text too). It is therefore below ``npmi_ceiling`` by
+construction: lowering ``count_pctile`` cannot touch it, and lowering
+``npmi_ceiling`` far enough to catch it (~0.6) also rejects genuine
+phrases (``peut_être`` 0.65, ``conseil_municipal`` 0.68). Removing
+that tier needs a different mechanism (a month-stem bigram stoplist,
+or upstream near-duplicate / site-template detection), not a tuning
+of the two knobs here.
 """
 
 from __future__ import annotations
