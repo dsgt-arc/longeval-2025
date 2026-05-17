@@ -19,7 +19,7 @@ from pyspark.ml.clustering import LDA, LocalLDAModel
 from pyspark.ml.feature import CountVectorizer, CountVectorizerModel, StopWordsRemover
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql.types import ArrayType, StringType
-from pyspark.sql import functions as F
+from pyspark.sql import Window, functions as F
 from sklearn.decomposition import PCA
 from sklearn.random_projection import GaussianRandomProjection
 from typing_extensions import Annotated
@@ -1510,6 +1510,285 @@ class AggregateLDASweep(luigi.Task):
         return luigi.LocalTarget(self._config_path())
 
 
+class TopicProportions(luigi.Task):
+    """Per-slice soft topic proportion for one trained K.
+
+    Consumes the per-K ``docTopicDistribution_lda.parquet`` (via the
+    shared ``InferLDASweep``) plus the corpus' ``date`` partition. The
+    ``date`` column was dropped during preprocessing, and ``docid``
+    recurs across slices (longitudinal, ~4.8x), so a recurring docid's
+    instances cannot be split back to their slices exactly without a
+    full preprocess rebuild. We collapse each docid to its mean theta
+    (absorbs the recurrence, no join blow-up) and inner-join the corpus
+    ``(date, docid)`` — exact on slice *membership* (docid is unique
+    within a slice), with <=~0.6% theta-smoothing only for the small
+    fraction of recurring docids whose content changed across months.
+
+    Emits a LONG-format ``topicProportions.parquet``
+    ``(k, date, topic, mean_theta, n_docs)`` so different-K outputs
+    stack without ragged columns. No sink/junk labelling — that is a
+    semantic, run- and K-specific judgement and belongs in an
+    interpretive layer over this raw matrix, not hardcoded here.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    num_topics = luigi.IntParameter()
+    preprocess_path = luigi.OptionalParameter(default=None)
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
+    # Routing-only (see RunLDAInference): excluded from _config_dict.
+    k_values = luigi.OptionalListParameter(default=None)
+
+    def _preprocess_path(self):
+        return self.preprocess_path or self.output_path
+
+    def _config_path(self):
+        return os.path.join(self.output_path, "_topicprop_config.json")
+
+    def _proportions_path(self):
+        return os.path.join(self.output_path, "topicProportions.parquet")
+
+    def _config_dict(self):
+        return {
+            "task": "TopicProportions",
+            "num_topics": int(self.num_topics),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
+            "preprocess_hash": _preprocess_hash(self),
+        }
+
+    def complete(self):
+        if not os.path.exists(self._proportions_path()):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
+
+    def requires(self):
+        return _infer_requirement(self)
+
+    def run(self):
+        k = int(self.num_topics)
+        topic_cols = [f"topic_{i}" for i in range(k)]
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+            doc_topic = spark.read.parquet(
+                os.path.join(
+                    self.output_path, "docTopicDistribution_lda.parquet"
+                )
+            ).select("docid", *topic_cols)
+            # Collapse the longitudinal docid recurrence to a per-docid
+            # mean theta: dmean is unique per docid, so the corpus join
+            # below is 1:1 (no ~4.8x blow-up) and slice membership stays
+            # exact.
+            dmean = doc_topic.groupBy("docid").agg(
+                *[F.avg(c).alias(c) for c in topic_cols]
+            )
+            corpus = ParquetCollection(
+                spark, self.input_path
+            ).documents.select("docid", "date")
+            # Mirror MinePhrases: date="all" pools every slice; any other
+            # value restricts to that single slice (so a single-slice run
+            # is not mis-attributed via cross-slice docids).
+            if str(self.date) != "all":
+                corpus = corpus.filter(F.col("date") == self.date)
+            joined = corpus.join(dmean, "docid", "inner")
+            per_slice = joined.groupBy("date").agg(
+                F.count(F.lit(1)).alias("n_docs"),
+                *[F.avg(c).alias(c) for c in topic_cols],
+            )
+            # Wide -> long so different K stack without ragged columns.
+            long_df = (
+                per_slice.select(
+                    F.lit(k).alias("k"),
+                    "date",
+                    "n_docs",
+                    F.posexplode(
+                        F.array(*[F.col(c) for c in topic_cols])
+                    ).alias("topic", "mean_theta"),
+                )
+                .select("k", "date", "topic", "mean_theta", "n_docs")
+                .orderBy("date", "topic")
+            )
+            long_df.write.mode("overwrite").parquet(self._proportions_path())
+            _write_stamp(self._config_path(), self._config_dict())
+            print(f"TopicProportions written (k={k}).")
+
+    def output(self):
+        return luigi.LocalTarget(self._config_path())
+
+
+class AggregateTopicProportions(luigi.Task):
+    """Cross-K root: stack every K's per-slice proportions + drift.
+
+    Standalone (not wired into ``AggregateLDASweep``) so it runs on an
+    *existing* sweep output with zero recompute — each ``TopicProportions``
+    routes through the shared ``InferLDASweep``, already complete for a
+    finished sweep. Writes two raw artifacts the K-selection / drift
+    analysis consumes (no semantic labelling baked in):
+
+    - ``topic_proportions.parquet`` long ``(k, date, topic, mean_theta,
+      n_docs)`` — the soft proportion matrix for every K and slice.
+    - ``topic_drift.parquet`` per ``(k, topic)``: min/max/range, mean,
+      population std over slices, first- vs last-slice value and their
+      signed delta, n_slices — the "delta over time" summary.
+    """
+
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    k_values = luigi.ListParameter()
+    date = luigi.Parameter(default="2023-02")
+    sample_fraction = luigi.FloatParameter(default=0.3)
+    min_df = luigi.FloatParameter(default=50.0)
+    max_df = luigi.FloatParameter(default=0.2)
+    vocab_size = luigi.IntParameter(default=20_000)
+    seed = luigi.IntParameter(default=42)
+    max_iter = luigi.IntParameter(default=10)
+    phrases_min_count = luigi.IntParameter(default=20)
+    phrases_threshold = luigi.FloatParameter(default=0.5)
+    phrases_npmi_ceiling = luigi.FloatParameter(default=0.95)
+    phrases_count_pctile = luigi.FloatParameter(default=99.9)
+    learning_offset = luigi.FloatParameter(default=1024.0)
+    learning_decay = luigi.FloatParameter(default=0.51)
+    subsampling_rate = luigi.FloatParameter(default=0.05)
+    optimize_doc_concentration = luigi.BoolParameter(default=True)
+
+    def _preprocess_path(self):
+        return os.path.join(self.output_path, "preprocess")
+
+    def _config_path(self):
+        return os.path.join(
+            self.output_path, "_topicprop_aggregate_config.json"
+        )
+
+    def _proportions_path(self):
+        return os.path.join(self.output_path, "topic_proportions.parquet")
+
+    def _drift_path(self):
+        return os.path.join(self.output_path, "topic_drift.parquet")
+
+    def _config_dict(self):
+        return {
+            "task": "AggregateTopicProportions",
+            "k_values": sorted(int(k) for k in self.k_values),
+            "seed": int(self.seed),
+            "max_iter": int(self.max_iter),
+            "learning_offset": float(self.learning_offset),
+            "learning_decay": float(self.learning_decay),
+            "subsampling_rate": float(self.subsampling_rate),
+            "optimize_doc_concentration": bool(self.optimize_doc_concentration),
+            "preprocess_hash": _preprocess_hash(self),
+        }
+
+    def complete(self):
+        if not (
+            os.path.exists(self._proportions_path())
+            and os.path.exists(self._drift_path())
+        ):
+            return False
+        return _stamp_matches(self._config_path(), self._config_dict())
+
+    def requires(self):
+        preprocess = self._preprocess_path()
+        return [
+            TopicProportions(
+                input_path=self.input_path,
+                output_path=os.path.join(self.output_path, f"k{int(k)}"),
+                num_topics=int(k),
+                preprocess_path=preprocess,
+                k_values=self.k_values,
+                date=self.date,
+                sample_fraction=self.sample_fraction,
+                min_df=self.min_df,
+                max_df=self.max_df,
+                vocab_size=self.vocab_size,
+                seed=self.seed,
+                max_iter=self.max_iter,
+                phrases_min_count=self.phrases_min_count,
+                phrases_threshold=self.phrases_threshold,
+                phrases_npmi_ceiling=self.phrases_npmi_ceiling,
+                phrases_count_pctile=self.phrases_count_pctile,
+                learning_offset=self.learning_offset,
+                learning_decay=self.learning_decay,
+                subsampling_rate=self.subsampling_rate,
+                optimize_doc_concentration=self.optimize_doc_concentration,
+            )
+            for k in self.k_values
+        ]
+
+    def run(self):
+        with spark_resource() as spark:
+            spark.sparkContext.setLogLevel("ERROR")
+            frames = [
+                spark.read.parquet(
+                    os.path.join(
+                        self.output_path,
+                        f"k{int(k)}",
+                        "topicProportions.parquet",
+                    )
+                )
+                for k in self.k_values
+            ]
+            long_df = functools.reduce(
+                lambda a, b: a.unionByName(b), frames
+            ).orderBy("k", "date", "topic")
+            long_df.write.mode("overwrite").parquet(self._proportions_path())
+
+            # First/last slice value per (k, topic) over the date order.
+            span = Window.partitionBy("k", "topic").orderBy("date").rowsBetween(
+                Window.unboundedPreceding, Window.unboundedFollowing
+            )
+            drift = (
+                long_df.withColumn(
+                    "first_theta", F.first("mean_theta").over(span)
+                )
+                .withColumn("last_theta", F.last("mean_theta").over(span))
+                .groupBy("k", "topic")
+                .agg(
+                    F.min("mean_theta").alias("min_theta"),
+                    F.max("mean_theta").alias("max_theta"),
+                    F.avg("mean_theta").alias("mean_theta"),
+                    F.stddev_pop("mean_theta").alias("std_theta"),
+                    F.first("first_theta").alias("first_theta"),
+                    F.first("last_theta").alias("last_theta"),
+                    F.countDistinct("date").alias("n_slices"),
+                )
+                .withColumn(
+                    "range_theta", F.col("max_theta") - F.col("min_theta")
+                )
+                .withColumn(
+                    "delta_first_last",
+                    F.col("last_theta") - F.col("first_theta"),
+                )
+                .orderBy("k", "topic")
+            )
+            drift.write.mode("overwrite").parquet(self._drift_path())
+            _write_stamp(self._config_path(), self._config_dict())
+            print(
+                "Topic proportions + drift written for "
+                f"k={sorted(int(k) for k in self.k_values)}."
+            )
+
+    def output(self):
+        return luigi.LocalTarget(self._config_path())
+
+
 def main(
         num_topics: Annotated[
             int, typer.Argument(help="Number of topics")
@@ -1689,6 +1968,109 @@ def sweep_main(
 
     luigi.build(
         [AggregateLDASweep(
+            input_path=input_path,
+            output_path=output_path,
+            k_values=ks,
+            date=date,
+            sample_fraction=sample_fraction,
+            min_df=min_df,
+            max_df=max_df,
+            vocab_size=vocab_size,
+            seed=seed,
+            max_iter=max_iter,
+            phrases_min_count=phrases_min_count,
+            phrases_threshold=phrases_threshold,
+            phrases_npmi_ceiling=phrases_npmi_ceiling,
+            phrases_count_pctile=phrases_count_pctile,
+            learning_offset=learning_offset,
+            learning_decay=learning_decay,
+            subsampling_rate=subsampling_rate,
+            optimize_doc_concentration=optimize_doc_concentration,
+        )],
+        **kwargs,
+    )
+
+
+def topic_proportions_main(
+        k_values: Annotated[
+            str,
+            typer.Argument(
+                help="Comma-separated K values, e.g. '5,10,20'. Each must "
+                "already have a completed docTopicDistribution under "
+                "<output_path>/k<K>/ (run lda-sweep first)."
+            ),
+        ] = "5,10,20",
+        input_path: Annotated[
+            str, typer.Argument(help="Corpus root (the lda-sweep input_path)")
+        ] = "/mnt/data/longeval",
+        output_path: Annotated[
+            str, typer.Argument(help="The completed lda-sweep output root")
+        ] = "/mnt/data/longeval/lda-sweep",
+        date: Annotated[
+            str,
+            typer.Option(
+                help="Same date as the sweep: 'all' = pooled (per-slice "
+                "breakdown), or a single slice e.g. 2022-06"
+            ),
+        ] = "2023-02",
+        sample_fraction: Annotated[
+            float, typer.Option(help="Document sampling fraction (sweep value)")
+        ] = 0.3,
+        min_df: Annotated[
+            float, typer.Option(help="CountVectorizer minDF (sweep value)")
+        ] = 50.0,
+        max_df: Annotated[
+            float, typer.Option(help="CountVectorizer maxDF (sweep value)")
+        ] = 0.2,
+        vocab_size: Annotated[
+            int, typer.Option(help="CountVectorizer vocabSize (sweep value)")
+        ] = 20_000,
+        seed: Annotated[int, typer.Option(help="LDA seed (sweep value)")] = 42,
+        max_iter: Annotated[
+            int, typer.Option(help="LDA maxIter (sweep value)")
+        ] = 10,
+        phrases_min_count: Annotated[
+            int, typer.Option(help="Phrase min_count (sweep value)")
+        ] = 20,
+        phrases_threshold: Annotated[
+            float, typer.Option(help="Phrase NPMI threshold (sweep value)")
+        ] = 0.5,
+        phrases_npmi_ceiling: Annotated[
+            float, typer.Option(help="Phrase npmi ceiling (sweep value)")
+        ] = 0.95,
+        phrases_count_pctile: Annotated[
+            float, typer.Option(help="Phrase count pctile (sweep value)")
+        ] = 99.9,
+        learning_offset: Annotated[
+            float, typer.Option(help="Online LDA learningOffset (sweep value)")
+        ] = 1024.0,
+        learning_decay: Annotated[
+            float, typer.Option(help="Online LDA learningDecay (sweep value)")
+        ] = 0.51,
+        subsampling_rate: Annotated[
+            float, typer.Option(help="Online LDA subsamplingRate (sweep value)")
+        ] = 0.05,
+        optimize_doc_concentration: Annotated[
+            bool, typer.Option(help="Online LDA optimizeDocConcentration")
+        ] = True,
+        scheduler_host: Annotated[str, typer.Argument(help="Scheduler host")] = None,
+):
+    """Per-slice soft topic proportions + temporal drift for a finished
+    sweep. Reuses the existing per-K docTopicDistribution (zero recompute)
+    and the corpus' date partition; the param defaults MUST match the
+    sweep's so the preprocess hash routes onto its InferLDASweep."""
+    ks = [int(x) for x in k_values.split(",") if x.strip()]
+    if not ks:
+        raise typer.BadParameter("k_values must contain at least one integer")
+
+    kwargs = {}
+    if scheduler_host:
+        kwargs["scheduler_host"] = scheduler_host
+    else:
+        kwargs["local_scheduler"] = True
+
+    luigi.build(
+        [AggregateTopicProportions(
             input_path=input_path,
             output_path=output_path,
             k_values=ks,
