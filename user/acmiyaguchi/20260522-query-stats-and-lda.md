@@ -55,19 +55,40 @@ JSON: `/mnt/data/tmp/longeval-query-stats.json`.
 Applied the **frozen** document feature space (Lucene-FR analyzer → NLTK stop
 stems → len≥3/non-numeric filter → NPMI phrases → CountVectorizer 20k vocab)
 and each converged LDA model to the 67,822 unique queries. **5,198 queries
-(7.7%)** reduce to an empty in-vocab bag (too short / OOV) and fall back to the
-model prior — excluded from the dominant-topic histograms below.
+(7.7%)** reduce to an empty in-vocab bag and are excluded from the
+dominant-topic histograms below.
+
+**Why queries go empty — vocab pruning, not tokenization.** Queries are
+tokenized with the *same* chain documents were for LDA (same frozen Lucene-FR
+analyzer, phrases, and 20k vocab). The empties are caused by LDA's `min_df=50`
+vocab cap dropping rare terms — the empty queries are proper nouns / rare words
+(`ibis beauvais`, `gigi clozeau`, `petit ateau`) that appear in <50 documents
+and so aren't in the LDA vocab. Note this LDA pipeline is **not** the BM25
+retrieval pipeline: both share the Lucene-FR base analyzer, but LDA adds the
+NLTK pass, len≥3/numeric filter, NPMI phrases, and vocab pruning that BM25's
+full index does not. Those same empty queries are fully indexed and retrievable
+under BM25.
+
+**What "empty" yields.** Spark's `LocalLDAModel.transform` returns a **zero
+vector** `[0,…,0]` for a doc with no in-vocab terms (it short-circuits empty
+docs) — it does *not* fall back to the Dirichlet prior α. So empties deflate the
+all-query mean θ uniformly (it sums to 0.923 = 1 − 0.077); the headline query θ
+below is the **non-empty renormalized** mean.
 
 ### K=4 — query topic mix vs. document topic mix
 
 n_docs-weighted corpus document mean θ vs. mean query θ:
 
+n_docs-weighted corpus document mean θ vs. non-empty-renormalized mean query θ:
+
 | Topic | Theme (top words) | Doc θ | Query θ | Dominant (queries) |
 |---|---|---|---|---|
-| 0 | English media / film / awards (Eurovision, Johnny Depp, US) | 0.252 | 0.084 | 5.5% |
-| 1 | French hotels / travel / real-estate (hôtel, nuit, réservation) | 0.104 | 0.215 | 24.5% |
-| 2 | Online-pharmacy spam (viagra, cialis, pharmacy) | 0.041 | 0.034 | 0.6% |
-| 3 | French general web / admin / society (site web, produit, travail) | 0.602 | 0.590 | 69.4% |
+| 0 | English media / film / awards (Eurovision, Johnny Depp, US) | 0.252 | 0.091 | 5.5% |
+| 1 | French hotels / travel / real-estate (hôtel, nuit, réservation) | 0.104 | 0.233 | 24.5% |
+| 2 | Online-pharmacy spam (viagra, cialis, pharmacy) | 0.041 | 0.037 | 0.6% |
+| 3 | French general web / admin / society (site web, produit, travail) | 0.602 | 0.639 | 69.4% |
+
+(All-query mean incl. empties: 0.084 / 0.215 / 0.034 / 0.590, sums to 0.923.)
 
 **Finding — query↔document topic mismatch.** The corpus is heavily skewed
 toward English media/film content (topic 0, **25% of documents but only 8% of
@@ -101,9 +122,9 @@ un-queried.
 ### Caveats
 
 - ~3-word queries are a thin signal for a 20k-vocab document topic model; 7.7%
-  map to nothing in-vocab. The dominant-topic histograms are over the 92.3% with
-  ≥1 in-vocab term. The *mean* θ includes empty queries (which inherit the
-  prior, biasing slightly toward the dominant topic) — reported for completeness.
+  map to nothing in-vocab (pruned by `min_df=50`, see above). The dominant-topic
+  histograms and headline mean θ are over the 92.3% with ≥1 in-vocab term;
+  empties yield Spark's zero vector (not the prior).
 - Inference uses each archive's frozen `preprocess/` (identical vocab/phrases
   across K=4 and K=20 by construction) and the converged `lda_model`. Online
   LDA `transform` is deterministic given fixed features.
