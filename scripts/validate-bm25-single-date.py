@@ -29,6 +29,12 @@ def main(
     ),
     output_path: str = typer.Option("/mnt/data/tmp/longeval-bm25-validate"),
     parallelism: int = typer.Option(8),
+    expanded_root: str = typer.Option(
+        None,
+        help="If set, left-join expansion JSON from {expanded_root}/expansion/*.json "
+        "onto the queries (replacing 'query'), matching workflow.py. e.g. "
+        "~/scratch/longeval/query_expansion/french",
+    ),
 ):
     # 1. Build the Lucene index directly from raw TREC for this date.
     ok = luigi.build(
@@ -59,8 +65,24 @@ def main(
     ).where(F.col("query").isNotNull())
     n_q = queries.count()
 
+    # 2b. Optionally swap in expanded queries (same left-join as workflow.py:255),
+    # but fall back to the original text for qids with no expansion (refused/adult
+    # batches), so the arm is scored over the same query set as the baseline.
+    n_expanded = 0
+    if expanded_root:
+        expanded = spark.read.json(
+            str(Path(expanded_root).expanduser() / "expansion" / "*.json"),
+            multiLine=True,
+        ).select("qid", F.col("query").alias("expanded"))
+        n_expanded = expanded.count()
+        queries = (
+            queries.join(expanded, on="qid", how="left")
+            .withColumn("query", F.coalesce("expanded", "query"))
+            .drop("expanded")
+        )
+
     # 3. Retrieve top-100 (same call the pipeline makes).
-    results = run_search(queries, index_path, k=100)
+    results = run_search(queries.where(F.col("query").isNotNull()), index_path, k=100)
     # TREC DOCNOs carry a "doc" prefix (doc14290) but qrels_processed.txt
     # uses bare integers (14290) — normalize so the score join matches.
     results = results.withColumn("docid", F.regexp_replace("docid", "^doc", ""))
@@ -83,6 +105,9 @@ def main(
 
     print("\n==== BM25 single-date validation ====", file=sys.stderr)
     print(f"date           : {date}", file=sys.stderr)
+    print(f"expanded_root  : {expanded_root or '(none — baseline)'}", file=sys.stderr)
+    if expanded_root:
+        print(f"expansion qids : {n_expanded} (corpus-wide; this date is a subset)", file=sys.stderr)
     print(f"queries (raw)  : {n_q}", file=sys.stderr)
     print(f"queries scored : {agg['n']}", file=sys.stderr)
     print(f"NDCG@10 mean   : {agg['ndcg10_mean']:.4f}", file=sys.stderr)

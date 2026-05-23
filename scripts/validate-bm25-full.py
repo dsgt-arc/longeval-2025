@@ -71,16 +71,42 @@ def main(
     output_path: str = typer.Option("/mnt/data/tmp/longeval-bm25-validate"),
     mirror_root: str = typer.Option("/mnt/data/tmp/longeval-trec-mirror-bm25"),
     parallelism: int = typer.Option(8),
+    expanded_root: str = typer.Option(
+        None,
+        help="If set, left-join expansion JSON from {expanded_root}/expansion/*.json "
+        "onto each date's queries (fallback to original for missing qids), and write "
+        "scores to scores_<variant>/ so they don't collide with the baseline. "
+        "Indexes are query-independent and reused. e.g. "
+        "~/scratch/longeval/query_expansion/french",
+    ),
 ):
     spark = get_spark()
     rows = []
+    # Separate score dir per variant; baseline keeps the plain `scores/` dir (and
+    # its cache). Indexes are shared (they don't depend on the query text).
+    tag = Path(expanded_root).name if expanded_root else None
+    scores_dir = f"{output_path}/scores" + (f"_{tag}" if tag else "")
+    expanded = None
+    if expanded_root:
+        # Pass an explicit Python file list rather than a glob string — Spark's
+        # Hadoop globbing is unreliable for this path here.
+        exp_files = glob.glob(
+            str(Path(expanded_root).expanduser() / "expansion" / "*.json")
+        )
+        if not exp_files:
+            raise SystemExit(f"no expansion files under {expanded_root}/expansion/")
+        expanded = (
+            spark.read.json(exp_files, multiLine=True)
+            .select("qid", F.col("query").alias("expanded"))
+            .cache()
+        )
 
     for split, dates, src_root in (
         ("train", TRAIN_DATES, TRAIN_ROOT),
         ("test", TEST_DATES, TEST_ROOT),
     ):
         for date in dates:
-            score_out = f"{output_path}/scores/date={date}"
+            score_out = f"{scores_dir}/date={date}"
             if Path(f"{score_out}/_SUCCESS").exists():
                 agg = _read_agg(spark, score_out)
                 rows.append({"date": date, "split": split, **agg, "cached": True})
@@ -111,7 +137,14 @@ def main(
                 sep="\t", schema="qid STRING, query STRING",
             ).where(F.col("query").isNotNull())
 
-            results = run_search(queries, index_path, k=100)
+            if expanded is not None:
+                queries = (
+                    queries.join(expanded, on="qid", how="left")
+                    .withColumn("query", F.coalesce("expanded", "query"))
+                    .drop("expanded")
+                )
+
+            results = run_search(queries.where(F.col("query").isNotNull()), index_path, k=100)
             results = results.withColumn("docid", F.regexp_replace("docid", "^doc", ""))
 
             if split == "train":
@@ -133,14 +166,14 @@ def main(
             print(f"[{date}] NDCG@10={agg['ndcg10_mean']:.4f} (n={agg['n']})", flush=True)
 
     # pooled mean across every scored query (the paper's aggregate)
-    allscores = spark.read.parquet(f"{output_path}/scores")
+    allscores = spark.read.parquet(scores_dir)
     pooled = allscores.agg(
         F.count("*").alias("n"),
         F.mean("ndcg_cut_10").alias("ndcg10_mean"),
         F.stddev("ndcg_cut_10").alias("ndcg10_std"),
     ).collect()[0]
 
-    print("\n==== Full BM25 baseline replication ====")
+    print(f"\n==== Full BM25 replication — variant={tag or 'baseline'} ====")
     print(f"{'date':<10}{'split':<7}{'NDCG@10':>9}{'queries':>9}")
     for r in sorted(rows, key=lambda x: x["date"]):
         print(f"{r['date']:<10}{r['split']:<7}{r['ndcg10_mean']:>9.4f}{r['n']:>9}")
@@ -148,8 +181,9 @@ def main(
     print(f"pooled NDCG@10 mean : {pooled['ndcg10_mean']:.4f}  (paper bm25 = 0.242)")
     print(f"pooled queries      : {pooled['n']}")
 
-    Path(f"{output_path}/summary.json").write_text(
-        json.dumps({"per_date": rows, "pooled_ndcg10": pooled["ndcg10_mean"],
+    Path(f"{scores_dir}/summary.json").write_text(
+        json.dumps({"variant": tag or "baseline", "per_date": rows,
+                    "pooled_ndcg10": pooled["ndcg10_mean"],
                     "pooled_n": pooled["n"]}, indent=2)
     )
 
