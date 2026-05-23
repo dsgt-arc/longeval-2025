@@ -70,6 +70,33 @@ retrieval (Nomic Embed v2, paper future-work) rather than topic overlap. LDA's
 value here stays **diagnostic** (collection characterization, drift, the
 un-queried ~30% bloat), not a ranking component.
 
+## Hardening (pi-review follow-up)
+
+pi-review flagged three risks; the two cheap, decisive ones were run
+(`scripts/topic-signal-probe-harden.py`) and the null **survives both**:
+
+| | dedup: mean θ-stddev among dup docids | cosine macro AUC | Hellinger macro AUC |
+|---|---|---|---|
+| K=4 | 0.0029 | 0.5186 | 0.5187 |
+| K=20 | 0.0063 | 0.5183 | 0.5209 |
+
+1. **Date-blind dedup is harmless.** Of 66,605 judged docids, 72% have
+   duplicates (≤9 copies, corpus deduped within-date not globally), but their θ
+   are near-identical (mean max-stddev ≈0.003–0.006; thin tail to ~0.64 for the
+   few docs whose content actually changed across months). Too small to move a
+   66k-docid AUC — the dedup does not explain the null.
+2. **Hellinger ≈ cosine.** Re-scoring with the simplex-appropriate Hellinger
+   similarity gives the same ≈0.5 AUC at both K. The null is not a wrong-metric
+   artifact.
+3. **(Not run)** Restricting to the BM25 top-100 candidate set (vs. the full
+   qrels pool) needs persisted retrieval lists. Expected to *strengthen* the
+   null: within the tighter candidate set, docs are even more topically
+   homogeneous, so topics discriminate even less.
+
+Net: the ~0.5 AUC is a robust null, not an artifact of dedup or metric choice.
+A consistent whisper of signal remains (macro AUC ~0.518–0.521 > 0.5) but is
+negligible for ranking and flat across K.
+
 ### Caveats
 
 - Judged docs are pooled qrels, not strictly the BM25 top-100; but the
