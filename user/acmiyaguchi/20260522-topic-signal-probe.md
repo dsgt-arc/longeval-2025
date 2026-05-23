@@ -97,6 +97,33 @@ Net: the ~0.5 AUC is a robust null, not an artifact of dedup or metric choice.
 A consistent whisper of signal remains (macro AUC ~0.518–0.521 > 0.5) but is
 negligible for ranking and flat across K.
 
+## Candidate-set rerank (the principled test)
+
+Closing pi-review point #2: instead of the full qrels pool, operate on the
+**actual BM25 top-25** — reorder it by topic similarity and measure NDCG@10.
+`scripts/topic-rerank-bm25.py`, 2023-01 + 2023-08, 20,848 queries scored.
+
+| ordering | K=4 NDCG@10 | K=20 NDCG@10 |
+|---|---|---|
+| BM25 baseline | **0.2553** | 0.2553 |
+| topic-only rerank | 0.1215 | 0.1208 |
+| fusion w=0.1 | 0.2556 | 0.2548 |
+| fusion w=0.3 | 0.2506 | 0.2479 |
+| fusion w=0.5 | 0.2335 | 0.2215 |
+| Kendall τ (BM25 vs topic order) | 0.017 | 0.045 |
+
+- **Topics change the order almost completely** (τ≈0.02–0.05 ≈ uncorrelated with
+  BM25) but the new order is no better than random: **topic-only reranking
+  halves NDCG** (0.255→0.121).
+- **Fusion never improves on BM25** — w=0.1 is flat (+0.0003 / −0.0005, noise),
+  every higher weight degrades monotonically. No topic weight beats the baseline.
+- K=20 ≈ K=4. This is stronger than the AUC null: not only do topics fail to
+  discriminate, *acting* on them destroys the ranking.
+- Baseline 0.2553 < the reproduction's 2023-01=0.3127 because this uses strict
+  full-qrels IDCG (pytrec_eval) over top-25 pooled across both dates, vs the
+  repo's `score_search` join method; all orderings here share the same eval, so
+  the comparison is internally clean.
+
 ### Caveats
 
 - Judged docs are pooled qrels, not strictly the BM25 top-100; but the
