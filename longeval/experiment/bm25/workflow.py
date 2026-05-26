@@ -1,14 +1,11 @@
-"""We use pyserini to run BM25 experiments.
+"""Run BM25 experiments with Pyserini/Anserini.
 
-The one downside of opensearch/elasticsearch is that we can't
-run the experiments on PACE, which limits a lot of the interesting
-experimentation we can do. Anserini uses Lucene under the hood,
-which allows us to get some of the same performance as we can get
-in an optimized system like OpenSearch.
-
-Here, we write a bit of code in order to get the appropriate indices
-and to get some basic functionality working.
+Anserini uses Lucene under the hood and runs well in file-based PACE/SLURM
+workflows. This module builds Lucene indices from parquet collections, runs
+retrieval, and writes outputs for evaluation and submissions.
 """
+
+import sys
 
 import typer
 import luigi
@@ -103,19 +100,98 @@ class BM25IndexTask(BashScriptTask, OptionMixin):
         return luigi.LocalTarget(f"{self.output_path}/index/date={self.date}/_SUCCESS")
 
     def script_text(self) -> str:
+        out_dir = f"{self.output_path}/index/date={self.date}"
         return dedent(
             f"""
             #!/bin/bash
-            mkdir -p {self.output_path}/index/date={self.date}
-            python -m pyserini.index.lucene \
+            set -e
+            mkdir -p {out_dir}
+            start=$(date +%s)
+            {sys.executable} -m pyserini.index.lucene \
                 --collection JsonCollection \
                 --input {self.scratch_path}/jsonl/date={self.date} \
-                --index {self.output_path}/index/date={self.date} \
+                --index {out_dir} \
                 --generator DefaultLuceneDocumentGenerator \
                 --language fr \
                 --threads {self.parallelism} \
                 --storePositions \
                 --storeDocvectors
+            end=$(date +%s)
+            # Pyserini's main process can exit 0 even when all index threads
+            # error out, leaving an index with segments_1 but no term files.
+            # Require at least one .tim (term dictionary) before claiming
+            # success.
+            ls {out_dir}/_*.tim >/dev/null 2>&1 || {{
+              echo "ERROR: no term dictionary written under {out_dir} — index is empty." >&2
+              exit 1
+            }}
+            {{
+              echo "source=jsonl"
+              echo "date={self.date}"
+              echo "threads={self.parallelism}"
+              echo "wall_seconds=$((end-start))"
+              echo "wall_human=$(date -u -d @$((end-start)) +%H:%M:%S)"
+            }} > {out_dir}/time.txt
+            touch {self.output().path}
+            """
+        )
+
+
+class BM25IndexFromTrecTask(BashScriptTask, OptionMixin):
+    """Create a BM25 index directly from raw TREC files (no JSONL step).
+
+    Inputs are read from `{trec_input_path}/Trec/{date}_fr/*.trec` as they ship
+    in the LongEval Web release; pyserini's TrecCollection handles the
+    `<DOC>...<DOCNO>...</DOCNO>...</DOC>` envelopes natively. Output lives at
+    `{output_path}/index_trec/date={date}/` so it coexists with the JSONL
+    index for direct A/B comparison.
+    """
+
+    trec_input_path: str = luigi.Parameter(
+        description="Parent of Trec/<date>_fr (e.g., 'LongEval Train Collection' dir).",
+    )
+
+    resources = {"max_workers": 1}
+
+    def output(self):
+        return luigi.LocalTarget(
+            f"{self.output_path}/index_trec/date={self.date}/_SUCCESS"
+        )
+
+    def script_text(self) -> str:
+        out_dir = f"{self.output_path}/index_trec/date={self.date}"
+        trec_dir = f"{self.trec_input_path}/Trec/{self.date}_fr"
+        return dedent(
+            f"""
+            #!/bin/bash
+            set -e
+            mkdir -p {out_dir}
+            start=$(date +%s)
+            {sys.executable} -m pyserini.index.lucene \
+                --collection TrecCollection \
+                --input "{trec_dir}" \
+                --index {out_dir} \
+                --generator DefaultLuceneDocumentGenerator \
+                --language fr \
+                --threads {self.parallelism} \
+                --storePositions \
+                --storeDocvectors
+            end=$(date +%s)
+            # Pyserini's main process can exit 0 even when all index threads
+            # error out, leaving an index with segments_1 but no term files.
+            # Require at least one .tim (term dictionary) before claiming
+            # success.
+            ls {out_dir}/_*.tim >/dev/null 2>&1 || {{
+              echo "ERROR: no term dictionary written under {out_dir} — index is empty." >&2
+              exit 1
+            }}
+            {{
+              echo "source=trec"
+              echo "date={self.date}"
+              echo "threads={self.parallelism}"
+              echo "wall_seconds=$((end-start))"
+              echo "wall_human=$(date -u -d @$((end-start)) +%H:%M:%S)"
+            }} > {out_dir}/time.txt
             touch {self.output().path}
             """
         )
@@ -439,6 +515,92 @@ def run_bm25(
     )
     if not res:
         raise RuntimeError("BM25 evaluation failed. Check the logs for details.")
+
+
+def _dates_from_trec_root(trec_root: str) -> list[str]:
+    """Enumerate snapshot dates from a `<root>/Trec/<YYYY-MM>_fr/` layout."""
+    root = Path(trec_root) / "Trec"
+    if not root.is_dir():
+        raise FileNotFoundError(f"No Trec/ dir under {trec_root}")
+    return sorted(p.name[: -len("_fr")] for p in root.glob("*_fr") if p.is_dir())
+
+
+@app.command(name="index-trec")
+def index_trec(
+    output_path: str = typer.Argument(..., help="Where index_trec/date=* will be written."),
+    train_trec_root: str = typer.Option(
+        ...,
+        help="Parent of Trec/<date>_fr for the train collection.",
+    ),
+    test_trec_root: str = typer.Option(
+        None,
+        help="Parent of Trec/<date>_fr for the test collection (optional).",
+    ),
+    parallelism: int = typer.Option(1, help="Threads passed to pyserini."),
+    workers: int = typer.Option(1, help="Luigi workers."),
+):
+    """Build a Lucene index per snapshot directly from raw TREC files."""
+    tasks = []
+    for date in _dates_from_trec_root(train_trec_root):
+        tasks.append(
+            BM25IndexFromTrecTask(
+                input_path=train_trec_root,
+                output_path=output_path,
+                date=date,
+                parallelism=parallelism,
+                trec_input_path=train_trec_root,
+            )
+        )
+    if test_trec_root:
+        for date in _dates_from_trec_root(test_trec_root):
+            tasks.append(
+                BM25IndexFromTrecTask(
+                    input_path=test_trec_root,
+                    output_path=output_path,
+                    date=date,
+                    parallelism=parallelism,
+                    trec_input_path=test_trec_root,
+                )
+            )
+    res = luigi.build(tasks, workers=workers, local_scheduler=True, log_level="INFO")
+    if not res:
+        raise RuntimeError("TREC-direct indexing failed. Check the logs for details.")
+
+
+@app.command(name="compare-index-times")
+def compare_index_times(
+    output_path: str = typer.Argument(..., help="Root that holds index/ and index_trec/."),
+):
+    """Print a per-date table of wall-clock for both index paths."""
+
+    def _scan(prefix: str) -> dict[str, int]:
+        out = {}
+        for time_file in Path(output_path).glob(f"{prefix}/date=*/time.txt"):
+            date = time_file.parent.name.split("=", 1)[1]
+            for line in time_file.read_text().splitlines():
+                if line.startswith("wall_seconds="):
+                    out[date] = int(line.split("=", 1)[1])
+                    break
+        return out
+
+    jsonl = _scan("index")
+    trec = _scan("index_trec")
+    dates = sorted(set(jsonl) | set(trec))
+    if not dates:
+        typer.echo("No time.txt files found under index/ or index_trec/.")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"{'date':<10} {'jsonl_s':>10} {'trec_s':>10} {'speedup':>10}")
+    for date in dates:
+        j = jsonl.get(date)
+        t = trec.get(date)
+        speedup = f"{j / t:.2f}x" if j and t else "-"
+        typer.echo(
+            f"{date:<10} "
+            f"{(str(j) if j is not None else '-'):>10} "
+            f"{(str(t) if t is not None else '-'):>10} "
+            f"{speedup:>10}"
+        )
 
 
 if __name__ == "__main__":

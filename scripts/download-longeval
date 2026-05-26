@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+"""Download a LongEval namespace into a local ir_datasets cache.
+
+Sets IR_DATASETS_HOME to a project-local directory and triggers
+ir_datasets_longeval.register(<namespace>), which eagerly fetches and
+extracts every zip in the namespace via ZipExtractCache.
+
+Examples:
+    scripts/download-longeval                       # longeval-web (default)
+    scripts/download-longeval --namespace longeval-sci-2026
+    scripts/download-longeval --cache /scratch/ir_datasets
+
+longeval-2023 requires a manual Lindat download (DUA-gated); the script
+prints the required symlink path and exits without touching the network.
+"""
+
+import os
+from pathlib import Path
+
+import typer
+
+NAMESPACES = {
+    "longeval-web": "2025 web (French). ~40 GB train + test + qrels from TU Wien.",
+    "longeval-sci": "2025 sci. Train + test + qrels + spot-check from TU Wien.",
+    "longeval-sci-2026": "2026 sci. Three snapshots + RAG questions from TU Wien.",
+    "longeval-2023": "2023 (Lindat, DUA-gated). Manual download required.",
+}
+
+
+def main(
+    namespace: str = typer.Option(
+        "longeval-web",
+        "--namespace",
+        "-n",
+        help=f"One of: {', '.join(NAMESPACES)}",
+    ),
+    cache: Path = typer.Option(
+        Path("/mnt/data/scratch/longeval"),
+        "--cache",
+        "-c",
+        help="ir_datasets cache root (sets IR_DATASETS_HOME).",
+    ),
+):
+    if namespace not in NAMESPACES:
+        raise typer.BadParameter(
+            f"Unknown namespace '{namespace}'. Choose from: {', '.join(NAMESPACES)}"
+        )
+
+    cache = cache.expanduser().resolve()
+    cache.mkdir(parents=True, exist_ok=True)
+    os.environ["IR_DATASETS_HOME"] = str(cache)
+    typer.echo(f"IR_DATASETS_HOME={cache}")
+    typer.echo(f"namespace: {namespace} — {NAMESPACES[namespace]}")
+
+    if namespace == "longeval-2023":
+        target = cache / "longeval-2023" / "longeval-train-v2.tgz"
+        typer.echo(
+            "\nlongeval-2023 cannot be fetched automatically. Steps:\n"
+            "  1. Request access at "
+            "https://lindat.mff.cuni.cz/repository/items/3b505342-6bad-48f8-8bc3-d0ae09d3f6e4\n"
+            f"  2. Place or symlink the tarball at: {target}\n"
+            "  3. Re-run this script to extract."
+        )
+        if not target.exists():
+            raise typer.Exit(code=1)
+
+    import ir_datasets_longeval
+
+    ir_datasets_longeval.register(namespace)
+    typer.echo(f"\ndone — extracted under {cache / namespace}/")
+
+
+if __name__ == "__main__":
+    typer.run(main)

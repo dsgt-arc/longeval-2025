@@ -1,13 +1,7 @@
-"""We use pyserini to run BM25 experiments.
+"""Evaluate retrieval and reranking outputs.
 
-The one downside of opensearch/elasticsearch is that we can't
-run the experiments on PACE, which limits a lot of the interesting
-experimentation we can do. Anserini uses Lucene under the hood,
-which allows us to get some of the same performance as we can get
-in an optimized system like OpenSearch.
-
-Here, we write a bit of code in order to get the appropriate indices
-and to get some basic functionality working.
+This workflow combines training qrels with held-out qrels, scores retrieval
+outputs with pytrec_eval, and writes per-query metrics for comparison.
 """
 
 import typer

@@ -4,7 +4,14 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from pyspark.sql import SparkSession
+
+# Pick up project defaults (Spark memory, scratch dir) without requiring
+# direnv. Searches upward from cwd for the nearest .env. Existing env vars
+# take precedence so a shell export or .env.local override still wins.
+load_dotenv()
+load_dotenv(".env.local", override=True)
 
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
@@ -47,6 +54,13 @@ def get_spark(
         .config("spark.local.dir", local_dir)
         # Disable Hive to prevent classpath errors
         .config("spark.sql.catalogImplementation", "in-memory")
+        # The LDA pipeline materializes a fat array<string> column
+        # (tokens_phrased): at full-corpus scale a single 4096-row
+        # vectorized-reader batch needs a >32MB contiguous buffer and
+        # OOMs regardless of total heap or core count. Row-wise reads
+        # have no such batch allocation; the pipeline is IO/shuffle-
+        # bound so the throughput cost is negligible.
+        .config("spark.sql.parquet.enableVectorizedReader", "false")
     )
     for k, v in kwargs.items():
         builder = builder.config(k, v)

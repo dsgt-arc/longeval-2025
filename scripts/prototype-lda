@@ -1,0 +1,191 @@
+#!/usr/bin/env python
+"""Prototype the LDA pipeline end-to-end on one date, small sample.
+
+Reads TREC files directly via TrecCollection (no parquet intermediate),
+runs Lucene FR analyzer + Spark-native NPMI bigram mining + CountVectorizer
++ LDA, and prints top-K words per topic. Intended to validate the pipeline
+before wiring it into the Luigi workflow.
+
+Example:
+    scripts/prototype-lda \\
+        --train-path "/mnt/data/scratch/longeval/longeval-web/release_2025_p1/release_2025_p1/French/LongEval Train Collection" \\
+        --date 2022-06 \\
+        --limit 50000 \\
+        --num-topics 10 \\
+        --out /mnt/data/tmp/lda-prototype
+"""
+
+import sys
+from pathlib import Path
+
+import typer
+from pyspark.ml.clustering import LDA
+from pyspark.ml.feature import CountVectorizer
+from pyspark.sql import functions as F
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from pyspark.sql.types import ArrayType, StringType
+
+from longeval.collection import TrecCollection
+from longeval.etl.lda.phrases import apply_phrases, fit_phrases
+from longeval.etl.lda.workflow import _analyze_udf
+from longeval.spark import spark_resource
+
+
+def _build_stop_stems():
+    """Load NLTK french+english stopwords, run them through the same Lucene
+    FR analyzer the docs use, return the post-stem set. This way stopword
+    surface forms (`est`, `the`) AND the stems they collapse to (`pl` from
+    `plus`) live in the same token space as the document tokens.
+    """
+    import nltk
+
+    try:
+        nltk.data.find("corpora/stopwords")
+    except LookupError:
+        nltk.download("stopwords", quiet=True)
+    from nltk.corpus import stopwords
+    from pyserini.analysis import Analyzer, get_lucene_analyzer
+
+    analyzer = Analyzer(get_lucene_analyzer(language="fr"))
+    raw = set(stopwords.words("french")) | set(stopwords.words("english"))
+    stems = set()
+    for w in raw:
+        stems.update(analyzer.analyze(w))
+    stems |= raw
+    return stems
+
+
+_STOP_STEMS = None
+
+
+def _clean(tokens):
+    global _STOP_STEMS
+    if _STOP_STEMS is None:
+        _STOP_STEMS = _build_stop_stems()
+    if not tokens:
+        return []
+    out = []
+    for t in tokens:
+        if not t or len(t) < 3:
+            continue
+        if t.isdigit():
+            continue
+        if t in _STOP_STEMS:
+            continue
+        out.append(t)
+    return out
+
+
+_clean_udf = F.udf(_clean, ArrayType(StringType()))
+
+
+def main(
+    train_path: str = typer.Option(
+        "/mnt/data/scratch/longeval/longeval-web/release_2025_p1/release_2025_p1/French/LongEval Train Collection",
+        "--train-path",
+        help="Directory containing Trec/<YYYY-MM>_fr/*.trec.",
+    ),
+    date: str = typer.Option("2022-06", "--date", help="Snapshot to use, e.g. 2022-06."),
+    limit: int = typer.Option(
+        50_000,
+        "--limit",
+        help="Cap documents loaded. Use 0 or negative for the full snapshot. "
+        "Note: .limit() triggers CollectLimit which coalesces to one partition, "
+        "killing parallelism — disabled when limit<=0.",
+    ),
+    num_topics: int = typer.Option(10, "--num-topics"),
+    max_iter: int = typer.Option(5, "--max-iter"),
+    phrases_min_count: int = typer.Option(20, "--phrases-min-count"),
+    phrases_threshold: float = typer.Option(0.5, "--phrases-threshold"),
+    out: Path = typer.Option(
+        Path("/mnt/data/tmp/lda-prototype"),
+        "--out",
+        help="Output directory for phrase table + topic words.",
+    ),
+):
+    out = out.expanduser().resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    typer.echo(f"output dir: {out}")
+
+    with spark_resource() as spark:
+        spark.sparkContext.setLogLevel("WARN")
+
+        from pyspark import StorageLevel
+
+        collection = TrecCollection(spark, train_path, dates=[date])
+        docs = collection.documents
+        if limit > 0:
+            docs = docs.limit(limit)
+
+        typer.echo("analyzing (Lucene FR) + cleaning...")
+        analyzed = (
+            docs.withColumn("tokens_raw", _analyze_udf(F.col("contents")))
+            .withColumn("tokens", _clean_udf(F.col("tokens_raw")))
+            .drop("tokens_raw")
+            .persist(StorageLevel.MEMORY_AND_DISK)
+        )
+        n_docs = analyzed.count()
+        typer.echo(f"loaded {n_docs} docs for date={date}")
+
+        typer.echo(
+            f"mining NPMI bigrams (min_count={phrases_min_count}, "
+            f"threshold={phrases_threshold})..."
+        )
+        phrases_df = fit_phrases(
+            analyzed,
+            tokens_col="tokens",
+            min_count=phrases_min_count,
+            threshold=phrases_threshold,
+        ).cache()
+        n_phrases = phrases_df.count()
+        typer.echo(f"  found {n_phrases} bigrams above threshold")
+        phrase_path = str(out / "phrases.parquet")
+        phrases_df.write.mode("overwrite").parquet(phrase_path)
+        typer.echo(f"  wrote phrase table to {phrase_path}")
+        top = phrases_df.orderBy(F.col("npmi").desc()).limit(20).collect()
+        typer.echo("  top bigrams by NPMI:")
+        for r in top:
+            typer.echo(f"    {r.a}_{r.b}  npmi={r.npmi:.3f}  count={r['count']}")
+
+        typer.echo("applying phrases...")
+        phrased = apply_phrases(analyzed, phrases_df)
+
+        typer.echo("vectorizing...")
+        vectorizer = CountVectorizer(
+            inputCol="tokens_phrased",
+            outputCol="features",
+            minDF=50.0,
+            maxDF=0.2,
+            vocabSize=20_000,
+        )
+        vector_model = vectorizer.fit(phrased)
+        typer.echo(f"  vocab size: {len(vector_model.vocabulary)}")
+        typer.echo(f"  sample vocab head: {vector_model.vocabulary[:25]}")
+        vectorized = vector_model.transform(phrased)
+
+        typer.echo(f"fitting LDA k={num_topics} maxIter={max_iter} (online)...")
+        lda = LDA(
+            k=num_topics,
+            maxIter=max_iter,
+            featuresCol="features",
+            optimizer="online",
+        )
+        lda_model = lda.fit(vectorized)
+
+        typer.echo("\n=== top-15 words per topic ===")
+        topics = lda_model.describeTopics(maxTermsPerTopic=15).collect()
+        vocab = vector_model.vocabulary
+        lines = []
+        for row in topics:
+            words = [vocab[i] for i in row.termIndices]
+            line = f"topic {row.topic:2d}: {' '.join(words)}"
+            typer.echo(line)
+            lines.append(line)
+        (out / "topic_words.txt").write_text("\n".join(lines) + "\n")
+        typer.echo(f"\nwrote topic words to {out / 'topic_words.txt'}")
+
+
+if __name__ == "__main__":
+    typer.run(main)

@@ -33,4 +33,4 @@ class BashScriptTask(ExternalProgramTask):
         script_file.close()
         print(f"Script file: {script_file.name}")
         print(script_text)
-        return ["/bin/bash", script_file.name]
+        return ["bash", script_file.name]
