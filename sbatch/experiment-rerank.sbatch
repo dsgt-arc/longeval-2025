@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH -Jlongeval-rerank --account=paceship-dsgt_clef2025 --qos=inferno
-#SBATCH --nodes=1 --gres=gpu:V100:1 --cpus-per-task=12 --mem-per-cpu=8G
-#SBATCH -t06:00:00 -oReport-%A_%a.out
+#SBATCH -Jlongeval-rerank --account=paceship-dsgt_clef2025 --qos=embers
+#SBATCH --nodes=1 -p gpu-v100 --gres=gpu:1 --cpus-per-task=12 --mem-per-cpu=8G
+#SBATCH -t04:00:00 -oReport-%A_%a.out
 #SBATCH --mail-type=END,FAIL --mail-user=acmiyaguchi@gatech.edu
 #SBATCH --array=0-14
 set -xeu
