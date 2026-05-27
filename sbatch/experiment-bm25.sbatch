@@ -18,15 +18,18 @@ hostname
 source ~/scratch/longeval/app/.venv/bin/activate
 python -m pyserini.index.lucene -options
 
-project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/longeval
+# 2025 project storage is deallocated; everything lives under scratch now.
 scratch_dir=$(realpath ~/scratch/longeval)
 
 export PYSPARK_DRIVER_CORES=24
 export PYSPARK_DRIVER_MEMORY=$(($PYSPARK_DRIVER_CORES*6-4))g
 export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
-python -m longeval.experiment.bm25.workflow \
-    $project_dir/2025/parquet \
-    $project_dir/2025/bm25 \
+# `run-bm25` must be named explicitly: the module's Typer app now exposes
+# multiple commands (run-bm25, index-trec, compare-index-times), so a bare
+# positional invocation is parsed as a command name and fails.
+python -m longeval.experiment.bm25.workflow run-bm25 \
+    $scratch_dir/2025/parquet \
+    $scratch_dir/2025/bm25 \
     --scratch-path $scratch_dir/bm25 \
     --parallelism $PYSPARK_DRIVER_CORES \
     --workers 12 \

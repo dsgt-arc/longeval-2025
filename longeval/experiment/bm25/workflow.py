@@ -459,7 +459,10 @@ def run_bm25(
                     "retrieval" if not with_expanded_queries else "retrieval_expanded"
                 ),
             )
-            for with_expanded_queries in [False, True]
+            # issue #37: expanded retrieval needs a query-expansion JSON that is
+            # not staged on PACE; pin to original queries only. Restore [False, True]
+            # to re-enable the expanded arm.
+            for with_expanded_queries in [False]
             for date in train_dates + test_dates
         ],
         workers=workers,
@@ -486,7 +489,10 @@ def run_bm25(
                     "retrieval" if not with_expanded_queries else "retrieval_expanded"
                 ),
             )
-            for with_expanded_queries in [False, True]
+            # issue #37: expanded retrieval needs a query-expansion JSON that is
+            # not staged on PACE; pin to original queries only. Restore [False, True]
+            # to re-enable the expanded arm.
+            for with_expanded_queries in [False]
             for date in train_dates
         ]
         + [
@@ -506,7 +512,10 @@ def run_bm25(
                     "retrieval" if not with_expanded_queries else "retrieval_expanded"
                 ),
             )
-            for with_expanded_queries in [False, True]
+            # issue #37: expanded retrieval needs a query-expansion JSON that is
+            # not staged on PACE; pin to original queries only. Restore [False, True]
+            # to re-enable the expanded arm.
+            for with_expanded_queries in [False]
             for date in test_dates
         ],
         workers=workers,

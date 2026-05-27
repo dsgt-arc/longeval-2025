@@ -10,11 +10,13 @@ from .lda.workflow import (
 from .lda.heldout import heldout_drift_main as lda_heldout_drift_main
 from .lda.convprobe import conv_probe_main as lda_conv_probe_main
 from .nmf.workflow import main as nmf_main
+from .irds.workflow import irds_parquet
 
 app = typer.Typer(no_args_is_help=True)
 app.command("dev-sample")(dev_sample_main)
 app.command("parquet")(to_parquet)
 app.command("trec-parquet")(to_trec_parquet)
+app.command("irds-parquet")(irds_parquet)
 app.command("embedding")(embedding_main)
 app.command("lda")(lda_main)
 app.command("lda-sweep")(lda_sweep_main)
