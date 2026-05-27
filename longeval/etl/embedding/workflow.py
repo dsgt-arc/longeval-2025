@@ -89,7 +89,7 @@ class ProcessSentenceTransformer(luigi.Task):
             (
                 df.repartition(self.num_partitions)
                 .write.mode("overwrite")
-                .parquet(f"{self.output_path}/sample_id={self.sample_id}")
+                .parquet(f"{self.output_path}/data/sample_id={self.sample_id}")
             )
 
 

@@ -11,8 +11,8 @@ def df():
     # dataframe with a single text column
     return spark.createDataFrame(
         [
-            Row(docid="1", contents="This is a test sentence."),
-            Row(docid="2", contents="This is another test sentence."),
+            Row(docid="1", contents="This is a test sentence that is intentionally made to be longer than fifty characters so that it passes the deduplication filter."),
+            Row(docid="2", contents="This is another test sentence that is also intentionally made to be longer than fifty characters for the same reason."),
         ]
     )
 

@@ -71,15 +71,14 @@ class Raw2025Collection(RawCollection):
     @property
     def metadata(self):
         """
-        We have a bunch of weird rules in here because the 2025 dataset is a bit strange.
-        We'll throw here and implement later if we need to, since we're changing up the
-        semantics of how the collection works. This means that it's a TODO to clean up
-        the work in this repo to get rid of all the references to the 2024 collection.
+        The 2025 dataset is structured differently than previous years.
+        Metadata is primarily inferred during the read process for each file.
         """
-        raise NotImplementedError(
-            "The metadata property is not implemented for Raw2025Collection. "
-            "This collection does not follow the standard path structure."
-        )
+        return {
+            "language": "French",
+            "split": "train",
+            "date": "multiple",
+        }
 
     def _filename_date_document_udf(self, path):
         def _parse(p):
@@ -175,6 +174,12 @@ class Raw2025Collection(RawCollection):
 
 class Raw2025TestCollection(Raw2025Collection):
     """A class for reading the 2025 test collection of datasets."""
+
+    @property
+    def metadata(self):
+        meta = super().metadata
+        meta["split"] = "test"
+        return meta
 
     @property
     def documents(self):
