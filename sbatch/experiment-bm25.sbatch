@@ -22,6 +22,15 @@ source ~/scratch/longeval/app/.venv/bin/activate
 # JVM_PATH is what pyjnius/pyserini's Lucene JVM honors; JAVA_HOME is for Spark.
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export JVM_PATH=$JAVA_HOME/lib/server/libjvm.so
+# pyserini.encode._openai instantiates openai.OpenAI() at import time (pulled in
+# by `from pyserini.search.lucene import LuceneSearcher`), which raises without
+# a key. BM25 never calls OpenAI, so a non-empty dummy satisfies the constructor.
+export OPENAI_API_KEY=dummy
+# That openai client also builds an httpx client that reads SSL_CERT_FILE; the
+# repo .env points it at ca-bundle.crt (RHEL/Nix), absent on Ubuntu -> the
+# import dies with FileNotFoundError. Point at Ubuntu's actual bundle.
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 python -m pyserini.index.lucene -options
 
