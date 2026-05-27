@@ -14,9 +14,11 @@ set -xeu
 #   ... irds-parquet ~/scratch/longeval/2025/parquet --only-date 2023-03
 # then drop --only-date for the full 15-date run.
 
+# ONLY_DATE is optional; pass it through --cleanenv into the container.
 apptainer exec \
     --writable-tmpfs \
     --cleanenv \
+    --env ONLY_DATE=${ONLY_DATE:-} \
     --cwd ~/scratch/longeval/app \
     ~/scratch/longeval/app.sif \
     bash << 'EOF'
