@@ -33,13 +33,25 @@ apptainer exec \
 set -xeu
 source ~/scratch/longeval/app/.venv/bin/activate
 
+# The repo .env hardcodes a NixOS JAVA_HOME/JVM_PATH (the dev box); longeval.spark
+# loads it via python-dotenv with override=False, so exporting the container's
+# OpenJDK 21 here wins. Without this PySpark's JVM launch fails with
+# JAVA_GATEWAY_EXITED ("/nix/store/.../bin/java: No such file or directory").
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export JVM_PATH=$JAVA_HOME/lib/server/libjvm.so
+
 scratch_dir=$(realpath ~/scratch/longeval)
 web=$scratch_dir/ir_datasets/longeval-web
 train_root="$web/release_2025_p1/release_2025_p1/French/LongEval Train Collection"
 test_root="$web/LongEval Test Collection/LongEval Test Collection"
 
 export PYSPARK_DRIVER_CORES=24
-export PYSPARK_DRIVER_MEMORY=$(($PYSPARK_DRIVER_CORES*8-8))g
+# Driver heap at ~75% of the 192G cgroup (24 cpus x 8G). The single local[]
+# JVM is the whole engine, but -Xmx must leave room for the Python driver,
+# Spark off-heap/maxResultSize, JVM metaspace/stacks, and OS page cache —
+# setting it to ~184g (cgroup-8) made the JVM abort at launch
+# (JAVA_GATEWAY_EXITED). 144g is ample for the TREC parse.
+export PYSPARK_DRIVER_MEMORY=$(($PYSPARK_DRIVER_CORES*8*3/4))g
 export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
 
 longeval etl web2025-parquet \

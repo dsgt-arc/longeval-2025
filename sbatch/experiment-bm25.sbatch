@@ -16,13 +16,22 @@ apptainer exec \
 set -xeu
 hostname
 source ~/scratch/longeval/app/.venv/bin/activate
+
+# The repo .env hardcodes a NixOS JAVA_HOME/JVM_PATH; override with the
+# container's OpenJDK 21 (load_dotenv uses override=False, so env wins).
+# JVM_PATH is what pyjnius/pyserini's Lucene JVM honors; JAVA_HOME is for Spark.
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export JVM_PATH=$JAVA_HOME/lib/server/libjvm.so
+
 python -m pyserini.index.lucene -options
 
 # 2025 project storage is deallocated; everything lives under scratch now.
 scratch_dir=$(realpath ~/scratch/longeval)
 
 export PYSPARK_DRIVER_CORES=24
-export PYSPARK_DRIVER_MEMORY=$(($PYSPARK_DRIVER_CORES*6-4))g
+# ~75% of the 144G cgroup (24 cpus x 6G), leaving room for the separate Lucene
+# indexing JVM, the Python driver, and OS page cache.
+export PYSPARK_DRIVER_MEMORY=$(($PYSPARK_DRIVER_CORES*6*3/4))g
 export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
 # `run-bm25` must be named explicitly: the module's Typer app now exposes
 # multiple commands (run-bm25, index-trec, compare-index-times), so a bare

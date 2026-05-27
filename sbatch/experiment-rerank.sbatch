@@ -28,6 +28,16 @@ apptainer exec \
 set -xeu
 source ~/scratch/longeval/app/.venv/bin/activate
 
+# The repo .env hardcodes NixOS paths (load_dotenv override=False, so env wins):
+#  - JAVA_HOME/JVM_PATH: the container's OpenJDK 21, for Spark candidate prep.
+#  - SSL_CERT_FILE/REQUESTS_CA_BUNDLE point at /etc/ssl/certs/ca-bundle.crt
+#    (RHEL/Nix naming) which does not exist on Ubuntu — the HF model fetch would
+#    fail with CERTIFICATE_VERIFY_FAILED. Ubuntu's bundle is ca-certificates.crt.
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export JVM_PATH=$JAVA_HOME/lib/server/libjvm.so
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
 scratch_dir=$(realpath ~/scratch/longeval)
 export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
 export HF_HOME=$scratch_dir/hf_cache
