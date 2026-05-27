@@ -7,7 +7,7 @@ set -xeu
 
 mkdir -p ~/scratch/apptainer/cache ~/scratch/longeval/app ~/scratch/longeval/hf_cache
 export APPTAINER_CACHEDIR=$(realpath ~/scratch/apptainer/cache)
-apptainer build \
+apptainer build --force \
     ~/scratch/longeval/app.sif \
     ~/arc/longeval-2025/app.def
 
