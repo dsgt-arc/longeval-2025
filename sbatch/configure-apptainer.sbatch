@@ -21,6 +21,11 @@ apptainer exec \
     ~/scratch/longeval/app.sif \
     bash << 'EOF'
 set -xeu
+# Keep uv's download cache OFF the 20 GB home filesystem (torch/pyspark wheels
+# blow the home quota); park it on scratch alongside the venv.
+export UV_CACHE_DIR=~/scratch/longeval/uv-cache
+export XDG_CACHE_HOME=~/scratch/longeval/.cache
+mkdir -p "$UV_CACHE_DIR" "$XDG_CACHE_HOME"
 uv venv
 source .venv/bin/activate
 uv pip install -e ~/arc/longeval-2025
