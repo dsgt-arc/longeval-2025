@@ -29,5 +29,13 @@ mkdir -p "$UV_CACHE_DIR" "$XDG_CACHE_HOME"
 uv venv
 source .venv/bin/activate
 uv pip install -e ~/arc/longeval-2025
-python -c "import torch, pyserini, sentence_transformers, ir_datasets_longeval; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+# torch is pulled in transitively (no pin in pyproject), and the default index
+# ships a CUDA 13 build (cu130). PACE's GPU nodes (V100, driver 575.57.08) only
+# support up to CUDA 12.9, so cu130 yields torch.cuda.is_available()==False and
+# the reranker silently runs on CPU. Re-pin torch to the cu126 (CUDA 12.6) build,
+# which the driver supports. torch 2.12.0 publishes only cu126 and cu130 builds
+# (no cu128/cu129), so cu126 is the compatible target. Same version, no dep shift.
+uv pip install --reinstall-package torch torch==2.12.0+cu126 \
+    --index-url https://download.pytorch.org/whl/cu126
+python -c "import torch, pyserini, sentence_transformers, ir_datasets_longeval; print('torch', torch.__version__, torch.version.cuda, 'cuda_avail', torch.cuda.is_available())"
 EOF

@@ -41,6 +41,8 @@ export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 scratch_dir=$(realpath ~/scratch/longeval)
 export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
 export HF_HOME=$scratch_dir/hf_cache
+# Models are pre-staged in HF_HOME; xet was slow/flaky, so use plain https.
+export HF_HUB_DISABLE_XET=1
 
 python ~/arc/longeval-2025/scripts/rerank-eval.py \
     --date "$TARGET_DATE" \
