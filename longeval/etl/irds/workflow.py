@@ -124,6 +124,22 @@ def _write_parquet_stream(rows_iter, columns, out_dir: str, batch_size: int):
     return n
 
 
+def _read_trec_qrels_file(path: str):
+    """Yield qrel rows from a space-separated TREC file (`qid rank docid rel`).
+
+    Used for the LongEval-Web TEST snapshots: their qrels ship in the
+    `longeval_web_test_qrels.zip` (defined in the package's downloads.json as
+    `longeval_2025_web_test_qrels` but never wired into register()), so the
+    ir_datasets API reports has_qrels()==False for them. We read the extracted
+    file directly. Same `qrels_processed.txt` format as the train qrels."""
+    with open(path) as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            yield {"qid": parts[0], "rank": int(parts[1]), "docid": parts[2], "rel": int(parts[3])}
+
+
 class IrdsSnapshotTask(luigi.Task):
     """Write one snapshot's Documents/Queries/Qrels into the parquet tree."""
 
@@ -132,6 +148,7 @@ class IrdsSnapshotTask(luigi.Task):
     split = luigi.Parameter()
     cache = luigi.Parameter()
     output_path = luigi.Parameter()
+    test_qrels_root = luigi.Parameter(default="")
     batch_size = luigi.IntParameter(default=25000)
 
     resources = {"max_workers": 1}
@@ -164,7 +181,10 @@ class IrdsSnapshotTask(luigi.Task):
             f"{base}/Queries/{part}",
             self.batch_size,
         )
+        # Qrels: train snapshots expose them via the API; test snapshots do not
+        # (held out by the package), so read the extracted test-qrels file.
         n_qrels = 0
+        qrels_dir = f"{base}/Qrels/{part}"
         if ds.has_qrels():
             n_qrels = _write_parquet_stream(
                 (
@@ -172,9 +192,20 @@ class IrdsSnapshotTask(luigi.Task):
                     for r in ds.qrels_iter()
                 ),
                 ["qid", "rank", "docid", "rel"],
-                f"{base}/Qrels/{part}",
+                qrels_dir,
                 self.batch_size,
             )
+        elif self.test_qrels_root:
+            qrels_file = Path(self.test_qrels_root).expanduser() / self.date / "qrels_processed.txt"
+            if qrels_file.is_file():
+                n_qrels = _write_parquet_stream(
+                    _read_trec_qrels_file(str(qrels_file)),
+                    ["qid", "rank", "docid", "rel"],
+                    qrels_dir,
+                    self.batch_size,
+                )
+            else:
+                print(f"[warn] no qrels for {self.date}: API empty and {qrels_file} missing", flush=True)
 
         marker = Path(self.output().path)
         marker.parent.mkdir(parents=True, exist_ok=True)
@@ -194,6 +225,11 @@ def irds_parquet(
     ),
     workers: int = typer.Option(1, help="Luigi workers (snapshots processed in parallel)."),
     batch_size: int = typer.Option(25000, help="Rows per parquet part file."),
+    test_qrels_root: str = typer.Option(
+        "~/scratch/longeval/raw/2025/test-qrels/longeval_web_qrels",
+        help="Extracted longeval_web_test_qrels dir (<date>/qrels_processed.txt) for the "
+        "test snapshots, which the ir_datasets API does not expose.",
+    ),
     only_date: str = typer.Option(
         None, help="If set, process just this YYYY-MM snapshot (smoke test)."
     ),
@@ -221,6 +257,7 @@ def irds_parquet(
                 split=split,
                 cache=cache_path,
                 output_path=output_path,
+                test_qrels_root=test_qrels_root,
                 batch_size=batch_size,
             )
         )
