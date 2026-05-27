@@ -37,5 +37,11 @@ uv pip install -e ~/arc/longeval-2025
 # (no cu128/cu129), so cu126 is the compatible target. Same version, no dep shift.
 uv pip install --reinstall-package torch torch==2.12.0+cu126 \
     --index-url https://download.pytorch.org/whl/cu126
-python -c "import torch, pyserini, sentence_transformers, ir_datasets_longeval; print('torch', torch.__version__, torch.version.cuda, 'cuda_avail', torch.cuda.is_available())"
+# transformers resolves to 5.x by default, whose major refactor dropped the
+# XLM-R helpers (create_position_ids_from_input_ids, ...) that the
+# jina-reranker-v2 remote code imports -> jina fails to load. Pin to the latest
+# 4.x; sentence-transformers 5.x still accepts it and the camembert control is
+# unaffected. (issue #37 needs the jina arm.)
+uv pip install --reinstall-package transformers "transformers>=4.46,<5"
+python -c "import torch, transformers, sentence_transformers, pyserini, ir_datasets_longeval; print('torch', torch.__version__, torch.version.cuda, 'cuda_avail', torch.cuda.is_available(), 'transformers', transformers.__version__)"
 EOF
