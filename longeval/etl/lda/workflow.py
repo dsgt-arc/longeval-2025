@@ -647,9 +647,9 @@ class TrainLDAModel(luigi.Task):
 
 
 class TrainLDASweep(luigi.Task):
-    """Fit every K in one Spark session via ``LDA.fitMultiple``.
+    """Fit missing K values in one Spark session via ``LDA.fitMultiple``.
 
-    Reads + caches ``features.parquet`` exactly once, then fits all
+    Reads + caches ``features.parquet`` exactly once, then fits the missing
     ``k_values`` against that single cached DataFrame, writing each model
     to ``<output_path>/k{K}/lda_model`` with a per-K ``_train_config.json``
     stamp **byte-identical** to what a per-K ``TrainLDAModel`` would write.
@@ -713,15 +713,18 @@ class TrainLDASweep(luigi.Task):
             "preprocess_hash": _preprocess_hash(self),
         }
 
+    def _k_complete(self, k):
+        return os.path.exists(
+            os.path.join(self._k_dir(k), "lda_model")
+        ) and _stamp_matches(
+            self._train_config_path(k), self._train_config_dict(k)
+        )
+
+    def _missing_k_values(self):
+        return [k for k in self.k_values if not self._k_complete(k)]
+
     def complete(self):
-        for k in self.k_values:
-            if not os.path.exists(os.path.join(self._k_dir(k), "lda_model")):
-                return False
-            if not _stamp_matches(
-                self._train_config_path(k), self._train_config_dict(k)
-            ):
-                return False
-        return True
+        return not self._missing_k_values()
 
     def requires(self):
         return BuildFeatures(
@@ -739,11 +742,18 @@ class TrainLDASweep(luigi.Task):
         )
 
     def run(self):
+        # Guard before opening Spark so a run() called directly on an
+        # already-complete task stays a cheap no-op.
+        missing_ks = self._missing_k_values()
+        if not missing_ks:
+            print("All K models already complete; skipping fitMultiple.")
+            return
+
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
 
             # Read + cache the (multi-GB at full slice) feature matrix
-            # ONCE; every K's fit reuses this cache instead of the old
+            # ONCE; every missing K's fit reuses this cache instead of the old
             # per-K parquet re-read + fresh JVM.
             features = spark.read.parquet(
                 os.path.join(self._preprocess_path(), "features.parquet")
@@ -751,7 +761,7 @@ class TrainLDASweep(luigi.Task):
             try:
                 features.count()
                 lda = _build_lda(
-                    k=int(self.k_values[0]),
+                    k=int(missing_ks[0]),
                     max_iter=self.max_iter,
                     seed=self.seed,
                     learning_offset=self.learning_offset,
@@ -759,9 +769,9 @@ class TrainLDASweep(luigi.Task):
                     subsampling_rate=self.subsampling_rate,
                     optimize_doc_concentration=self.optimize_doc_concentration,
                 )
-                param_maps = [{lda.k: int(k)} for k in self.k_values]
+                param_maps = [{lda.k: int(k)} for k in missing_ks]
                 for index, model in lda.fitMultiple(features, param_maps):
-                    k = int(self.k_values[index])
+                    k = int(missing_ks[index])
                     k_dir = self._k_dir(k)
                     os.makedirs(k_dir, exist_ok=True)
                     model.write().overwrite().save(
@@ -902,11 +912,11 @@ class RunLDAInference(luigi.Task):
 
 
 class InferLDASweep(luigi.Task):
-    """Inference analogue of ``TrainLDASweep``: score every K's model in
+    """Inference analogue of ``TrainLDASweep``: score missing K models in
     one Spark session.
 
     Loads ``vector_model`` and caches ``features.parquet`` once, then for
-    each K loads ``k{K}/lda_model``, writes
+    each missing K loads ``k{K}/lda_model``, writes
     ``k{K}/docTopicDistribution_lda.parquet`` + ``topicWords_lda.txt`` and
     a per-K ``_inference_config.json`` **byte-identical** to what a per-K
     ``RunLDAInference`` would write. That identity lets the per-K
@@ -960,18 +970,17 @@ class InferLDASweep(luigi.Task):
             "preprocess_hash": _preprocess_hash(self),
         }
 
+    def _k_complete(self, k):
+        out = os.path.join(self._k_dir(k), "docTopicDistribution_lda.parquet")
+        return os.path.exists(out) and _stamp_matches(
+            self._infer_config_path(k), self._infer_config_dict(k)
+        )
+
+    def _missing_k_values(self):
+        return [k for k in self.k_values if not self._k_complete(k)]
+
     def complete(self):
-        for k in self.k_values:
-            out = os.path.join(
-                self._k_dir(k), "docTopicDistribution_lda.parquet"
-            )
-            if not os.path.exists(out):
-                return False
-            if not _stamp_matches(
-                self._infer_config_path(k), self._infer_config_dict(k)
-            ):
-                return False
-        return True
+        return not self._missing_k_values()
 
     def requires(self):
         return TrainLDASweep(
@@ -997,6 +1006,13 @@ class InferLDASweep(luigi.Task):
         )
 
     def run(self):
+        # Guard before opening Spark so a run() called directly on an
+        # already-complete task stays a cheap no-op.
+        missing_ks = self._missing_k_values()
+        if not missing_ks:
+            print("All K inference already complete; skipping.")
+            return
+
         with spark_resource() as spark:
             spark.sparkContext.setLogLevel("ERROR")
             preprocess = self._preprocess_path()
@@ -1007,14 +1023,14 @@ class InferLDASweep(luigi.Task):
             if not vocab:
                 raise ValueError("Empty CountVectorizer vocabulary.")
 
-            # Cache the feature matrix once; every K's transform reuses
-            # it instead of the old per-K parquet re-read + fresh JVM.
+            # Cache the feature matrix once; every missing K's transform
+            # reuses it instead of the old per-K parquet re-read + fresh JVM.
             features = spark.read.parquet(
                 os.path.join(preprocess, "features.parquet")
             ).cache()
             try:
                 features.count()
-                for k in self.k_values:
+                for k in missing_ks:
                     k = int(k)
                     k_dir = self._k_dir(k)
                     os.makedirs(k_dir, exist_ok=True)
@@ -1917,9 +1933,9 @@ def sweep_main(
         k_values: Annotated[
             str,
             typer.Argument(
-                help="Comma-separated K values to sweep, e.g. '2,3,5,10,20,30,40,80,160'"
+                help="Comma-separated K values to sweep, e.g. '2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20'"
             ),
-        ] = "2,3,5,10,20,30,40,80,160",
+        ] = "2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20",
         input_path: Annotated[
             str, typer.Argument(help="Input root directory")
         ] = "/mnt/data/longeval",
@@ -2019,11 +2035,11 @@ def topic_proportions_main(
         k_values: Annotated[
             str,
             typer.Argument(
-                help="Comma-separated K values, e.g. '5,10,20'. Each must "
+                help="Comma-separated K values, e.g. '2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20'. Each must "
                 "already have a completed docTopicDistribution under "
                 "<output_path>/k<K>/ (run lda-sweep first)."
             ),
-        ] = "5,10,20",
+        ] = "2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20",
         input_path: Annotated[
             str, typer.Argument(help="Corpus root (the lda-sweep input_path)")
         ] = "/mnt/data/longeval",
