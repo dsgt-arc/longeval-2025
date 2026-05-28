@@ -105,6 +105,53 @@ Throughput (V100, fp16): camembert-base ~530 pairs/s, jina-v2 ~412 pairs/s.
 Versions (manifest): torch 2.12.0+cu126, transformers 4.57.6, sentence-transformers
 5.5.1, ir_datasets 0.5.11.
 
+## Full-query confirmation sweep
+
+Follow-up to verify the 1k-subsample was unbiased. Same protocol but
+**`--sample-queries 0` (entire qid set) and one seed (42)**, the 3 baseline arms.
+Artifacts: `issue37-results-full.{md,csv}` and `issue37-manifest-full.json`;
+raw cells at `~/scratch/longeval/2025/rerank-full/`.
+
+15 dates × 1 seed × 3 arms = **45 runs**, single-seed (no std bar).
+
+| date | split | bm25 | camembert-base | jina-v2 |
+|---|---|---:|---:|---:|
+| 2022-06 | train | 0.1275 | 0.1577 | 0.1778 |
+| 2022-07 | train | 0.1336 | 0.1646 | 0.1865 |
+| 2022-08 | train | 0.1411 | 0.1730 | 0.1949 |
+| 2022-09 | train | 0.2102 | 0.2582 | 0.2852 |
+| 2022-10 | train | 0.2956 | 0.3585 | 0.3961 |
+| 2022-11 | train | 0.2917 | 0.3647 | 0.3964 |
+| 2022-12 | train | 0.3029 | 0.3673 | 0.4009 |
+| 2023-01 | train | 0.3116 | 0.3761 | 0.4118 |
+| 2023-02 | train | 0.3098 | 0.3754 | 0.4113 |
+| 2023-03 | test | 0.3152 | 0.3829 | 0.4243 |
+| 2023-04 | test | 0.3227 | 0.3865 | 0.4178 |
+| 2023-05 | test | 0.3262 | 0.3926 | 0.4253 |
+| 2023-06 | test | 0.3176 | 0.3689 | 0.4047 |
+| 2023-07 | test | 0.3193 | 0.3854 | 0.4210 |
+| 2023-08 | test | 0.2843 | 0.3373 | 0.3645 |
+
+| group | bm25 | camembert-base | jina-v2 |
+|---|---:|---:|---:|
+| train (9) | 0.2360±0.0823 | 0.2884±0.0993 | 0.3179±0.1059 |
+| test (6) | 0.3142±0.0151 | 0.3756±0.0203 | 0.4096±0.0233 |
+| pooled (15) | 0.2673±0.0744 | 0.3233±0.0880 | 0.3546±0.0937 |
+
+**Match to the 1k 3-seed sweep:** every cell is within ±0.014 absolute of the
+prior 1k mean (≤ 1.4% relative). On 11 of 11 testable dates a Δ-vs-1k between
+−0.014 and +0.010, with a mild systematic negative skew (9 of 15 deltas
+negative) — the 1k random draws appear to slightly oversample easier queries
+on average. **Jina-v2 still beats the control on every date.** Test-set mean
+goes 0.4148 (1k) → 0.4096 (full) — a +0.005 absolute gap that is well
+inside the 1k 3-seed std (±0.0247). The 1k-subsample table the paper would
+reference is faithful.
+
+Compute: full-query sweep wall_sum ≈ **25 GPU-h** vs **5.3 GPU-h** for the 1k
+3-seed (about 4.7× more for the rerank arms; per-pair throughput identical at
+camembert ~530 / jina-v2 ~416 pairs/s). Wall-clock as a 15-task array: ~3 h
+20 m gated by 2022-08 (the largest date, 2.71M pairs).
+
 ## Decisions
 
 - **Does jina-v2 consistently beat the control? YES — on all 15/15 dates**, train

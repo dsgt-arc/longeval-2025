@@ -63,6 +63,10 @@ def _load(rerank_root: Path) -> pd.DataFrame:
 
 
 def _fmt(mean: float, std: float) -> str:
+    # single-seed cells have undefined std (groupby std on n=1 → NaN); for a
+    # cleaner table just show the mean.
+    if std is None or pd.isna(std) or std == 0.0:
+        return f"{mean:.4f}"
     return f"{mean:.4f}±{std:.4f}"
 
 
@@ -90,17 +94,25 @@ def main(
     )
 
     dates = sorted(df["date"].unique())
+    # Only show columns that actually have data in this rerank root — keeps the
+    # full-query rerank-full/ table (3 arms) from showing empty extras columns
+    # and vice-versa.
+    present = set(df["arm"].unique())
+    col_order = [c for c in COL_ORDER if c in present]
     lines = ["# Issue #37 — reranker nDCG@10 across LongEval-Web dates", ""]
     seeds = sorted(int(s) for s in df["seed"].unique())
-    lines.append(f"Per-date cells are mean±std over seeds {seeds}; 1k-query subsample, k=100.")
+    seed_blurb = f"mean±std over seeds {seeds}" if len(seeds) > 1 else f"single seed={seeds[0]}, no std"
+    sample = int(df["n_queries"].median())
+    sample_blurb = f"{sample}-query subsample" if sample <= 2000 else "full query set"
+    lines.append(f"Per-date cells are {seed_blurb}; {sample_blurb}, k=100.")
     lines.append("")
-    header = "| date | split | " + " | ".join(COL_ORDER) + " |"
+    header = "| date | split | " + " | ".join(col_order) + " |"
     lines.append(header)
-    lines.append("|" + "---|" * (len(COL_ORDER) + 2))
+    lines.append("|" + "---|" * (len(col_order) + 2))
     for date in dates:
         split = "train" if date in TRAIN_DATES else "test"
         cells = []
-        for arm in COL_ORDER:
+        for arm in col_order:
             row = cell[(cell["date"] == date) & (cell["arm"] == arm)]
             cells.append(_fmt(row["mean"].iloc[0], (row["std"].iloc[0] or 0.0)) if len(row) else "—")
         lines.append(f"| {date} | {split} | " + " | ".join(cells) + " |")
@@ -108,8 +120,8 @@ def main(
     # across-dates summary: per-date value = mean over seeds; then mean±std over dates
     per_date_mean = cell.set_index(["date", "arm"])["mean"]
     lines += ["", "## Across-dates summary (mean±std over dates)", ""]
-    lines.append("| group | " + " | ".join(COL_ORDER) + " |")
-    lines.append("|" + "---|" * (len(COL_ORDER) + 1))
+    lines.append("| group | " + " | ".join(col_order) + " |")
+    lines.append("|" + "---|" * (len(col_order) + 1))
     groups = {
         "train (9)": TRAIN_DATES,
         "test (6)": [d for d in dates if d not in TRAIN_DATES],
@@ -117,7 +129,7 @@ def main(
     }
     for gname, gdates in groups.items():
         cells = []
-        for arm in COL_ORDER:
+        for arm in col_order:
             vals = [per_date_mean.get((d, arm)) for d in gdates if (d, arm) in per_date_mean.index]
             vals = pd.Series([v for v in vals if v is not None])
             cells.append(_fmt(vals.mean(), vals.std()) if len(vals) else "—")
