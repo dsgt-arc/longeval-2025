@@ -70,12 +70,12 @@ apptainer exec ~/scratch/longeval/app.sif bash -lc \
      --rerank-root ~/scratch/longeval/2025/rerank'
 ```
 
-## Results
+## Results (initial 3-arm pass)
 
-Full grid completed: 15 dates × 3 seeds (42,1,2) × 3 arms = **135 runs**. Cells are
-mean±std over seeds; 1k-query subsample, k=100, nDCG@10, fp16 on V100. Artifacts:
-`issue37-results.{md,csv}`, `issue37-manifest.json` (copied from
-`~/scratch/longeval/2025/rerank/`).
+Initial 3-arm grid: 15 dates × 3 seeds (42,1,2) × 3 arms = **135 runs**. Cells are
+mean±std over seeds; 1k-query subsample, k=100, nDCG@10, fp16 on V100. (The
+"5-arm extras sweep" section below expands this to 6 arms; `issue37-results.{md,csv}`
+and `issue37-manifest.json` reflect the 5-arm 270-run table.)
 
 | date | split | bm25 | camembert-base | jina-v2 |
 |---|---|---|---|---|
@@ -152,16 +152,85 @@ Compute: full-query sweep wall_sum ≈ **25 GPU-h** vs **5.3 GPU-h** for the 1k
 camembert ~530 / jina-v2 ~416 pairs/s). Wall-clock as a 15-task array: ~3 h
 20 m gated by 2022-08 (the largest date, 2.71M pairs).
 
+## 5-arm extras sweep
+
+Phase 2 of the same 1k 3-seed protocol, adding three more rerankers to widen the
+comparison: `antoinelouis/crossencoder-camembert-large-mmarcoFR` (335M; same
+family as the control, larger), `antoinelouis/crossencoder-camemberta-L10-mmarcoFR`
+(~98M DeBERTa-v3-based French model), and `BAAI/bge-reranker-v2-m3` (568M XLM-R-large
+multilingual). Same code path, same sampling, same fp16; just batch=32 to fit the
+larger arms on V100 16GB. Sbatch: `sbatch/experiment-rerank-extras.sbatch`; writes
+into the same `~/scratch/longeval/2025/rerank/` so the aggregator yields one
+6-column table.
+
+15 dates × 3 seeds × 6 arms = **270 cells**; results from
+`scripts/aggregate-rerank-results.py` (copied to `issue37-results.{md,csv}`,
+`issue37-manifest.json`).
+
+| date | split | bm25 | camembert-base | camemberta-L10 | camembert-large | bge-v2-m3 | jina-v2 |
+|---|---|---|---|---|---|---|---|
+| 2022-06 | train | 0.1240±0.0118 | 0.1599±0.0160 | 0.1635±0.0124 | 0.1643±0.0191 | 0.1748±0.0202 | 0.1782±0.0210 |
+| 2022-07 | train | 0.1310±0.0151 | 0.1589±0.0120 | 0.1631±0.0121 | 0.1649±0.0100 | 0.1727±0.0102 | 0.1759±0.0103 |
+| 2022-08 | train | 0.1402±0.0139 | 0.1657±0.0104 | 0.1714±0.0105 | 0.1749±0.0080 | 0.1879±0.0172 | 0.1912±0.0152 |
+| 2022-09 | train | 0.2131±0.0031 | 0.2583±0.0035 | 0.2632±0.0042 | 0.2664±0.0062 | 0.2926±0.0069 | 0.2901±0.0015 |
+| 2022-10 | train | 0.2924±0.0066 | 0.3548±0.0109 | 0.3591±0.0068 | 0.3665±0.0101 | 0.3848±0.0131 | 0.3940±0.0094 |
+| 2022-11 | train | 0.2886±0.0074 | 0.3524±0.0077 | 0.3511±0.0053 | 0.3567±0.0094 | 0.3821±0.0057 | 0.3828±0.0042 |
+| 2022-12 | train | 0.3173±0.0072 | 0.3757±0.0019 | 0.3790±0.0085 | 0.3890±0.0092 | 0.4133±0.0141 | 0.4133±0.0095 |
+| 2023-01 | train | 0.3123±0.0086 | 0.3738±0.0108 | 0.3725±0.0081 | 0.3864±0.0099 | 0.4062±0.0115 | 0.4134±0.0113 |
+| 2023-02 | train | 0.3195±0.0062 | 0.3780±0.0058 | 0.3914±0.0090 | 0.3883±0.0129 | 0.4204±0.0150 | 0.4212±0.0107 |
+| 2023-03 | test | 0.3129±0.0076 | 0.3847±0.0036 | 0.3910±0.0078 | 0.3960±0.0136 | 0.4164±0.0066 | 0.4281±0.0063 |
+| 2023-04 | test | 0.3159±0.0065 | 0.3770±0.0061 | 0.3733±0.0087 | 0.3786±0.0092 | 0.4088±0.0190 | 0.4079±0.0185 |
+| 2023-05 | test | 0.3321±0.0033 | 0.3986±0.0116 | 0.3951±0.0080 | 0.4023±0.0122 | 0.4291±0.0093 | 0.4350±0.0120 |
+| 2023-06 | test | 0.3170±0.0100 | 0.3733±0.0106 | 0.3796±0.0091 | 0.3790±0.0113 | 0.4024±0.0130 | 0.4136±0.0130 |
+| 2023-07 | test | 0.3254±0.0082 | 0.3982±0.0059 | 0.4004±0.0042 | 0.4052±0.0045 | 0.4237±0.0052 | 0.4346±0.0041 |
+| 2023-08 | test | 0.2895±0.0081 | 0.3471±0.0043 | 0.3435±0.0101 | 0.3443±0.0027 | 0.3680±0.0023 | 0.3698±0.0063 |
+
+| group | bm25 | camembert-base | camemberta-L10 | camembert-large | bge-v2-m3 | jina-v2 |
+|---|---|---|---|---|---|---|
+| train (9) | 0.2376±0.0856 | 0.2864±0.1004 | 0.2905±0.1003 | 0.2953±0.1025 | 0.3150±0.1090 | 0.3178±0.1092 |
+| test (6) | 0.3155±0.0146 | 0.3798±0.0192 | 0.3805±0.0207 | 0.3842±0.0226 | 0.4081±0.0219 | 0.4148±0.0247 |
+| pooled (15) | 0.2687±0.0763 | 0.3237±0.0902 | 0.3265±0.0893 | 0.3309±0.0907 | 0.3522±0.0958 | 0.3566±0.0972 |
+
+**Reading the rows:**
+
+- **jina-v2 still leads on test (0.4148)**, with bge-v2-m3 a clear close 2nd
+  (0.4081, Δ −0.007 absolute, ~1.6% relative). Per-date on test: jina-v2 wins
+  5/6 dates over bge-v2-m3 (bge takes 2023-04 by +0.001). On train, bge edges
+  jina on 2022-09 (0.2926 vs 0.2901) and ties on 2022-12; jina wins the other 7.
+- **Scaling up camembert barely moves the needle.** camembert-large (335M) over
+  camembert-base (110M) on test: 0.3842 vs 0.3798 → **+0.0044** absolute (~1.2%
+  relative). camemberta-L10 (DeBERTa-v3, ~98M) lands at 0.3805 — basically tied
+  with camembert-base. The model-family pretraining matters more than parameter
+  count: jina-v2 (~278M) and bge-v2-m3 (568M, multilingual XLM-R-large) both
+  decisively outperform the camembert family at any of the sizes tested.
+- **Two-tier picture**: bm25 (0.3155 test) → camembert family + camemberta
+  (~0.38) → bge-v2-m3 + jina-v2 (~0.41). The within-tier deltas are within (or
+  comparable to) the seed std bars; the across-tier deltas are not.
+
+Throughput on V100 (fp16, batch=32 for the extras): bge-v2-m3 ~177 pairs/s,
+camembert-large ~178, camemberta-L10 ~228, plus camembert-base ~530 and jina-v2
+~412 at batch=64 from the original sweep. The extras run took ~1 h 50 m
+wall-clock as a 15-task array, gated by 2022-08 (the largest date).
+
 ## Decisions
 
-- **Does jina-v2 consistently beat the control? YES — on all 15/15 dates**, train
-  and test, every seed. On the held-out test set jina-v2 leads camembert-base by
-  **+0.035 nDCG@10 (0.4148 vs 0.3798, ~9% relative)**; both beat BM25 everywhere.
-  The prior single-date observation (2023-01: jina 0.4145 vs control 0.3772)
-  generalizes — this run gives 2023-01 jina 0.4134 / control 0.3738.
-- **Promote jina-v2 as the default reranker: YES.** The win is consistent and
-  sizable, with no date where the control is competitive. The fp16 cost (~412 vs
-  ~530 pairs/s) is modest.
+- **Does jina-v2 consistently beat the camembert-base control? YES — on all
+  15/15 dates**, train and test, every seed. On the held-out test set jina-v2
+  leads camembert-base by **+0.035 nDCG@10 (0.4148 vs 0.3798, ~9% relative)**;
+  both beat BM25 everywhere. The prior single-date observation (2023-01: jina
+  0.4145 vs control 0.3772) generalizes — this run gives 2023-01 jina 0.4134 /
+  control 0.3738. Full-query sweep replicates: jina-v2 ahead on every date.
+- **Promote jina-v2 as the default reranker: YES.** The 5-arm comparison gives
+  it the highest pooled and test nDCG@10 of any arm tried, with the closest
+  competitor (bge-v2-m3) trailing by 0.007 absolute on test and 0.004 pooled,
+  while costing ~2.3× more pairs/s to run. The fp16 cost (~412 vs ~530 pairs/s
+  for camembert-base) is modest.
+- **bge-v2-m3 is a viable backup**: ~1.6% behind jina-v2 on test, but with the
+  same lift over the camembert tier, so the choice between jina-v2 and bge-v2-m3
+  is a wash on quality. We pick jina-v2 for throughput.
+- **Don't bother with camembert-large or camemberta-L10**: gains over
+  camembert-base are within the seed std (+0.004 / +0.001 on test). The
+  3× throughput cost of camembert-large is not justified.
 - **Keep query expansion excluded: YES** — negative in the prior worklog; BM25
   expanded loops stay pinned off (`for with_expanded_queries in [False]`).
 
