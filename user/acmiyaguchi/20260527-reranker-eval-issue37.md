@@ -3,6 +3,49 @@
 **Date opened:** 2026-05-27 · **Owner:** acmiyaguchi (driven via Claude Code)
 **Branch:** `issue-37-reranker-eval` · **Tracks:** GitHub issue #37
 
+## Status (2026-05-28) — done
+
+All three sub-experiments finished and on PR #38:
+
+| phase | runs | result |
+|---|---|---|
+| Phase 1 — 3-arm 1k 3-seed (bm25 / camembert-base / jina-v2) | 135 | jina-v2 beats camembert-base on **15/15 dates**, every seed |
+| Full-query confirmation (same 3 arms, all qids, seed 42) | 45 | matches phase 1 within ±0.014 absolute; jina-v2 still wins every date |
+| Phase 2 — 5-arm 1k 3-seed extras (+ camembert-large, camemberta-L10, bge-v2-m3) | 270 | jina-v2 leads; bge-v2-m3 close 2nd; bigger camembert ≈ camembert-base |
+
+**Test-set headline (6 dates, mean nDCG@10, 1k 3-seed):**
+
+| arm | test | vs jina-v2 |
+|---|---:|---:|
+| jina-v2 | 0.4148 | — |
+| bge-v2-m3 | 0.4081 | −0.0067 |
+| camembert-large | 0.3842 | −0.0306 |
+| camemberta-L10 | 0.3805 | −0.0343 |
+| camembert-base | 0.3798 | −0.0350 |
+| bm25 | 0.3155 | −0.0993 |
+
+**Decisions taken** (full detail in the Decisions section):
+- Promote **jina-v2** as the default reranker.
+- **bge-v2-m3** is a viable backup (same quality tier, ~2.3× slower).
+- Don't bother with camembert-large / camemberta-L10 — gains over camembert-base
+  are within seed std.
+- Keep query expansion excluded.
+
+**For the paper** — paper-ready artifacts live next to this worklog:
+- `issue37-results.{md,csv}` + `issue37-manifest.json` — 5-arm 1k 3-seed
+  table (the primary table)
+- `issue37-results-full.{md,csv}` + `issue37-manifest-full.json` — 3-arm
+  full-query confirmation table (for the appendix / reproducibility statement)
+- This worklog has the protocol, the bug-discovery notes (docid stripping,
+  torch cu126 pin, transformers<5 pin), and the decision rationale.
+
+**Open hooks for follow-up analysis** are stubbed in
+`user/anthony/20260528-reranker-eval-issue37.md`: per-topic reranker
+effectiveness via LDA registers, paired Wilcoxon per arm-pair, drift-over-time,
+independent reproducibility cross-check.
+
+---
+
 Follows up `20260523-reranker-model-comparison.md`, which found
 `jinaai/jina-reranker-v2-base-multilingual` (0.4145) beat the paper control
 `antoinelouis/crossencoder-camembert-base-mmarcoFR` (0.3772) on a single 2023-01
