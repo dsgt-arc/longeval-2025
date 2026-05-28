@@ -248,14 +248,18 @@ class BM25RetrievalPartialTask(luigi.Task, OptionMixin):
             )
 
             if self.with_expanded_queries:
-                # expanded query location
+                # Left-join expansion JSON onto queries; coalesce back to the
+                # original query for any qid the generator missed (~0.4% on
+                # LongEval-Web 2025). Without the coalesce, missing qids land
+                # as null and Lucene's searcher.search(query, k) raises
+                # `(nan, 100)` JavaException.
                 expanded = spark.read.json(
                     Path(self.expanded_path).expanduser().as_posix(), multiLine=True
-                ).cache()
-                queries = queries.drop("query").join(
-                    expanded,
-                    on=["qid"],
-                    how="left",
+                ).select(F.col("qid"), F.col("query").alias("expanded_query")).cache()
+                queries = (
+                    queries.join(expanded, on=["qid"], how="left")
+                    .withColumn("query", F.coalesce(F.col("expanded_query"), F.col("query")))
+                    .drop("expanded_query")
                 )
 
             results = run_search(
