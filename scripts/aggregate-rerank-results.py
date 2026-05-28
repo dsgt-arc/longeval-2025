@@ -84,7 +84,7 @@ def main(
 
     dates = sorted(df["date"].unique())
     lines = ["# Issue #37 — reranker nDCG@10 across LongEval-Web dates", ""]
-    seeds = sorted(df["seed"].unique())
+    seeds = sorted(int(s) for s in df["seed"].unique())
     lines.append(f"Per-date cells are mean±std over seeds {seeds}; 1k-query subsample, k=100.")
     lines.append("")
     header = "| date | split | " + " | ".join(COL_ORDER) + " |"
@@ -121,13 +121,17 @@ def main(
     # reproducibility manifest
     vcols = [c for c in ("torch", "transformers", "sentence_transformers", "ir_datasets") if c in df]
     versions = {c: sorted(df[c].dropna().unique().tolist()) for c in vcols}
-    tput = (
-        df[df["model"] != "bm25"]
-        .groupby("arm")["pairs_per_s"]
-        .mean()
-        .round(1)
-        .to_dict()
-    )
+    tput = {
+        k: float(v)
+        for k, v in (
+            df[df["model"] != "bm25"]
+            .groupby("arm")["pairs_per_s"]
+            .mean()
+            .round(1)
+            .to_dict()
+            .items()
+        )
+    }
     manifest = {
         "git_commit": _git_commit(),
         "dates": dates,

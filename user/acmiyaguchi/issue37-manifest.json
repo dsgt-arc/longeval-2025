@@ -1,0 +1,53 @@
+{
+  "git_commit": "e2181bb24edd579818f516e45f3f8b50e50b8fbf",
+  "dates": [
+    "2022-06",
+    "2022-07",
+    "2022-08",
+    "2022-09",
+    "2022-10",
+    "2022-11",
+    "2022-12",
+    "2023-01",
+    "2023-02",
+    "2023-03",
+    "2023-04",
+    "2023-05",
+    "2023-06",
+    "2023-07",
+    "2023-08"
+  ],
+  "seeds": [
+    1,
+    2,
+    42
+  ],
+  "sample_queries": 1000,
+  "k_candidates": 98,
+  "max_seq_len": 512,
+  "batch_size": 64,
+  "models": [
+    "antoinelouis/crossencoder-camembert-base-mmarcoFR",
+    "bm25",
+    "jinaai/jina-reranker-v2-base-multilingual"
+  ],
+  "versions": {
+    "torch": [
+      "2.12.0+cu126"
+    ],
+    "transformers": [
+      "4.57.6"
+    ],
+    "sentence_transformers": [
+      "5.5.1"
+    ],
+    "ir_datasets": [
+      "0.5.11"
+    ]
+  },
+  "mean_pairs_per_s_by_arm": {
+    "camembert-base": 529.7,
+    "jina-v2": 412.2
+  },
+  "total_runs": 135
+}
