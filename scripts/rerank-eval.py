@@ -55,15 +55,18 @@ def _safe(model: str) -> str:
     return model.replace("/", "__")
 
 
-def _build_candidates(date: str, root: str, bm25_root: str):
+def _build_candidates(date: str, root: str, bm25_root: str, retrieval_prefix: str = "retrieval"):
     """BM25 top-k for `date` with document `contents` + query text joined on.
     Returns pandas [qid, query, docid, contents, score] and the qrels Spark df
-    (train+test unioned, filtered to the date)."""
+    (train+test unioned, filtered to the date). `retrieval_prefix` switches
+    between `retrieval/` (original queries) and `retrieval_expanded/` (LLM-
+    expanded queries) — the candidate set differs; the rerank query stays the
+    original user query from the queries parquet."""
     spark = get_spark()
     train = ParquetCollection(spark, f"{root}/train")
     test = ParquetCollection(spark, f"{root}/test")
 
-    retrieval = spark.read.parquet(f"{bm25_root}/retrieval/date={date}").select(
+    retrieval = spark.read.parquet(f"{bm25_root}/{retrieval_prefix}/date={date}").select(
         "qid", "docid", "score"
     )
 
@@ -163,6 +166,11 @@ def main(
     date: str = typer.Option(..., help="Snapshot YYYY-MM to evaluate."),
     root: str = typer.Option("~/scratch/longeval/2025/parquet", help="Parquet root."),
     bm25_root: str = typer.Option("~/scratch/longeval/2025/bm25", help="BM25 output root."),
+    retrieval_prefix: str = typer.Option(
+        "retrieval",
+        help="Subdir under bm25_root holding the candidate set "
+        "(`retrieval` = original queries; `retrieval_expanded` = expanded).",
+    ),
     out: str = typer.Option("~/scratch/longeval/2025/rerank", help="Results root."),
     models: str = typer.Option(DEFAULT_MODELS, help="Comma-separated arms; 'bm25' is the baseline."),
     seeds: str = typer.Option("42,1,2", help="Comma-separated subsample seeds."),
@@ -184,7 +192,7 @@ def main(
     split = _split_for_date(date)
     versions = _versions()
 
-    base, qrels = _build_candidates(date, root, bm25_root)
+    base, qrels = _build_candidates(date, root, bm25_root, retrieval_prefix)
     spark = get_spark()
     uniq = sorted(base["qid"].unique())
     print(f"[{date}] {len(uniq)} qids, {len(base)} candidate pairs", file=sys.stderr, flush=True)
