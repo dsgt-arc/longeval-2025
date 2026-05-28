@@ -1,15 +1,22 @@
 #!/bin/bash
 #SBATCH -Jlongeval-rerank --account=paceship-dsgt_clef2025 --qos=embers
 #SBATCH --nodes=1 -p gpu-v100 --gres=gpu:1 --cpus-per-task=12 --mem-per-cpu=8G
-#SBATCH -t04:00:00 -oReport-%A_%a.out
+#SBATCH -t05:00:00 -oReport-%A_%a.out
 #SBATCH --mail-type=END,FAIL --mail-user=acmiyaguchi@gatech.edu
 #SBATCH --array=0-14
 set -xeu
 
-# One array task per date (15 LongEval-Web snapshots). Seeds (42,1,2) and arms
-# (bm25, camembert-base, jina-v2) loop inside rerank-eval.py so the per-date
-# Spark candidate prep runs once. Per-(date,seed,model) _SUCCESS markers make
-# this resumable — resubmit after a timeout to continue.
+# One array task per date (15 LongEval-Web snapshots). Seeds and arms (bm25,
+# camembert-base, jina-v2) loop inside rerank-eval.py so the per-date Spark
+# candidate prep runs once. Per-(date,seed,model) _SUCCESS markers make this
+# resumable — resubmit after a timeout to continue.
+#
+# Defaults below run the FULL query set (no subsampling, single seed). The
+# previous multi-seed 1k-query sweep results live at $scratch_dir/2025/rerank;
+# this writes a parallel $scratch_dir/2025/rerank-full so both are kept. -t was
+# bumped to 5h to give 2022-08 (the largest date, ~3h15m pure rerank) margin
+# under the 6h embers QOS cap. 2022-06/07/08 also need --mem-per-cpu=16G — submit
+# those three with `sbatch --array=0,1,2 --mem-per-cpu=16G ...` separately.
 
 DATES=( 2022-06 2022-07 2022-08 2022-09 2022-10 2022-11 2022-12 2023-01 2023-02 \
         2023-03 2023-04 2023-05 2023-06 2023-07 2023-08 )
@@ -48,9 +55,9 @@ python ~/arc/longeval-2025/scripts/rerank-eval.py \
     --date "$TARGET_DATE" \
     --root $scratch_dir/2025/parquet \
     --bm25-root $scratch_dir/2025/bm25 \
-    --out $scratch_dir/2025/rerank \
-    --seeds 42,1,2 \
-    --sample-queries 1000 \
+    --out $scratch_dir/2025/rerank-full \
+    --seeds 42 \
+    --sample-queries 0 \
     --batch-size 64 \
     --fp16
 EOF
