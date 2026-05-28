@@ -176,6 +176,10 @@ data/
 *.ndjson
 *.png
 *.csv
+# issue #37 reranker eval — keep the raw per-(date,seed,model) result rows
+# next to the worklog + results.md they back. ~23KB per sweep; the full per-qid
+# parquet stays on scratch.
+!user/acmiyaguchi/issue37-results*.csv
 logs/
 tests/integration/
 *.tar.gz
