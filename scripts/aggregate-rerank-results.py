@@ -20,13 +20,20 @@ import typer
 
 app = typer.Typer()
 
-# short display labels for the arms
+# short display labels for the arms; COL_ORDER controls table column order.
+# Extras (large/L10/bge) added in issue #37 phase 2 — same 1k 3-seed protocol,
+# results land in the same rerank/ root.
 LABELS = {
     "bm25": "bm25",
     "antoinelouis/crossencoder-camembert-base-mmarcoFR": "camembert-base",
+    "antoinelouis/crossencoder-camembert-large-mmarcoFR": "camembert-large",
+    "antoinelouis/crossencoder-camemberta-L10-mmarcoFR": "camemberta-L10",
+    "BAAI/bge-reranker-v2-m3": "bge-v2-m3",
     "jinaai/jina-reranker-v2-base-multilingual": "jina-v2",
 }
-COL_ORDER = ["bm25", "camembert-base", "jina-v2"]
+COL_ORDER = [
+    "bm25", "camembert-base", "camemberta-L10", "camembert-large", "bge-v2-m3", "jina-v2",
+]
 TRAIN_DATES = [
     "2022-06", "2022-07", "2022-08", "2022-09", "2022-10",
     "2022-11", "2022-12", "2023-01", "2023-02",
