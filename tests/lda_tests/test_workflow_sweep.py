@@ -286,6 +286,58 @@ def test_sweep_stamp_is_byte_identical_to_per_k_train():
     assert sweep._train_config_dict(3) == per_k._config_dict()
 
 
+def _write_json(path, payload):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(payload, f)
+
+
+def test_train_sweep_missing_k_values_are_incremental(tmp_path):
+    root = str(tmp_path / "sweep")
+    sweep = TrainLDASweep(
+        input_path="/in",
+        output_path=root,
+        preprocess_path=str(tmp_path / "preprocess"),
+        k_values=[2, 3, 5],
+    )
+    assert list(sweep._missing_k_values()) == [2, 3, 5]
+
+    os.makedirs(os.path.join(root, "k2", "lda_model"))
+    _write_json(sweep._train_config_path(2), sweep._train_config_dict(2))
+    assert list(sweep._missing_k_values()) == [3, 5]
+
+    os.makedirs(os.path.join(root, "k3", "lda_model"))
+    _write_json(sweep._train_config_path(3), {"num_topics": 999})
+    assert list(sweep._missing_k_values()) == [3, 5]
+
+    _write_json(sweep._train_config_path(3), sweep._train_config_dict(3))
+    os.makedirs(os.path.join(root, "k5", "lda_model"))
+    _write_json(sweep._train_config_path(5), sweep._train_config_dict(5))
+    assert sweep.complete() is True
+
+
+def test_infer_sweep_missing_k_values_are_incremental(tmp_path):
+    root = str(tmp_path / "sweep")
+    sweep = InferLDASweep(
+        input_path="/in",
+        output_path=root,
+        preprocess_path=str(tmp_path / "preprocess"),
+        k_values=[2, 3],
+    )
+    assert list(sweep._missing_k_values()) == [2, 3]
+
+    os.makedirs(os.path.join(root, "k2", "docTopicDistribution_lda.parquet"))
+    _write_json(sweep._infer_config_path(2), sweep._infer_config_dict(2))
+    assert list(sweep._missing_k_values()) == [3]
+
+    os.makedirs(os.path.join(root, "k3", "docTopicDistribution_lda.parquet"))
+    _write_json(sweep._infer_config_path(3), {"task": "stale"})
+    assert list(sweep._missing_k_values()) == [3]
+
+    _write_json(sweep._infer_config_path(3), sweep._infer_config_dict(3))
+    assert sweep.complete() is True
+
+
 # ---------------------------------------------------------------------------
 # Spark end-to-end
 # ---------------------------------------------------------------------------
