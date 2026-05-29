@@ -75,8 +75,8 @@ peripheral, not part of the head-of-leaderboard story.
 
 ## Monthly seasonality probe — negative result
 
-Question: do any K=200 topics show calendar-month spikes (Saint-Valentin Feb,
-Fête des Mères May, Oscars Mar, Noël Dec, etc.)?
+Do any K=200 topics show calendar-month spikes (Saint-Valentin Feb, Fête des
+Mères May, Oscars Mar, Noël Dec)?
 
 ### The algorithmic recipe (reusable)
 
@@ -235,9 +235,8 @@ the B3 redo described below).
 | B3 frac_above_05 | 0.198 | 0.241 | **+22 %** |
 | B3 frac_above_10 | 0.133 | 0.160 | **+20 %** |
 
-The pre-step row deliberately uses Oct/Nov 2022 — they bracket the step in time and
-are the slices with the closest sample sizes (~2.15 M docs) to the post-step
-slices (~2.0 M docs), so the comparison is not confounded by N.
+Pre-step row uses Oct/Nov 2022: closest sample sizes (~2.15 M docs) to the
+post-step slices (~2.0 M docs), so the comparison isn't confounded by N.
 
 ### Verdict
 

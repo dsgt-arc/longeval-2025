@@ -14,6 +14,8 @@ top-3 boilerplate-hash counts per slice.
 
 Source: `/mnt/data/tmp/lda-k200-converged/heldout/topic_proportions_15slice.parquet`,
 ranked by `mean_theta` per slice. Rows ordered by mean rank across the window.
+**Bold** = Dec-2022 transition value for topics whose rank shifted ≥3 positions
+across the step (T139 also bolds the pre-step rank=21 marking out-of-Top-20).
 
 | topic | top words (8) | 22-06 | 22-07 | 22-08 | 22-09 | 22-10 | 22-11 | 22-12 | 23-01 | 23-02 | 23-03 | 23-04 | 23-05 | 23-06 | 23-07 | 23-08 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -90,6 +92,8 @@ Jun/Jul/Aug → **0 / 3 confirmed**.
 
 Source: `/mnt/data/tmp/corpus-diagnostics/doc-length/summary_by_date.csv`.
 `n_docs` is exact count (post-dedup). `*_pNN` are `percentile_approx`, accuracy=10000.
+**Bold** = Oct/Nov 2022 highs and Dec-2022 step values; ↓ marks the Dec-2022
+step direction relative to Oct/Nov.
 
 | date | n_docs | char_mean | char_stddev | char_p05 | char_p25 | char_p50 | char_p75 | char_p95 | word_mean | word_p25 | word_p50 | word_p75 | word_p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -142,7 +146,8 @@ Dec-2022.
 
 Source: `/mnt/data/tmp/corpus-diagnostics/en-density/summary_by_date.csv` (regex-fixed).
 Stopwords: `{the, and, for, with, you, this, that, from, have, not}`, word-bounded,
-case-insensitive.
+case-insensitive. **Bold** row = Dec-2022 step values; ↑ marks direction
+relative to Oct/Nov 2022.
 
 | date | en_density_mean | en_density_p50 | en_density_p95 | frac_above_05 | frac_above_10 |
 |---|---:|---:|---:|---:|---:|
@@ -208,16 +213,13 @@ that's independent of the Dec-2022 topic step; worth a follow-up.
 
 ## 9. Lineage / files
 
+Full file inventory (sources, diagnostic jobs, companion worklogs) in the
+narrative note's "Lineage / files used" section. The number tables above were
+generated from:
+
 | What | Where |
 |---|---|
-| Held-out K=200 topic proportions | `/mnt/data/tmp/lda-k200-converged/heldout/topic_proportions_15slice.parquet` |
-| K=200 topic words (200 × 100 terms) | `/mnt/data/tmp/lda-k200-converged/k200/topicWords_lda.txt` |
-| Source parquets | `/mnt/data/tmp/longeval-{train,test}-parquet/Documents/` (split=…/language=…/date=…) |
-| Diagnostic job (fused B1+B2+B3 + top-hashes) | `/mnt/data/tmp/corpus-diagnostics/run_diagnostics.py` |
-| B3 regex-fix job | `/mnt/data/tmp/corpus-diagnostics/run_b3_fix.py` |
+| K=200 held-out topic proportions | `/mnt/data/tmp/lda-k200-converged/heldout/topic_proportions_15slice.parquet` |
+| K=200 topic words | `/mnt/data/tmp/lda-k200-converged/k200/topicWords_lda.txt` |
 | B1/B2/B3 CSVs | `/mnt/data/tmp/corpus-diagnostics/{doc-length,dedup,en-density}/summary_by_date.csv` |
 | Top-20 boilerplate hashes per slice | `/mnt/data/tmp/corpus-diagnostics/dedup/top_hashes_by_date.parquet` |
-| Narrative + hypothesis ranking | [`20260528-lda-k200-rank-stability-seasonality-shift.md`](20260528-lda-k200-rank-stability-seasonality-shift.md) |
-| K=200 training + register pattern | [`20260527-lda-k200-worklog.md`](20260527-lda-k200-worklog.md) |
-| Cross-K saturation summary | [`20260528-lda-k-granularity-saturation.md`](20260528-lda-k-granularity-saturation.md) |
-| K=4 worklog (100% FR labelled) | [`../acmiyaguchi/20260519-lda-k4-worklog.md`](../acmiyaguchi/20260519-lda-k4-worklog.md) |
