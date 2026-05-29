@@ -215,8 +215,8 @@ class BM25RetrievalPartialTask(luigi.Task, OptionMixin):
         description="Prefix for the output directory.",
     )
     expanded_path: str = luigi.Parameter(
-        default="~/scratch/longeval/query_expansion/expansion",
-        description="Path to the expanded queries JSON file.",
+        default="~/scratch/longeval/2025/query_expansion/french/expansion",
+        description="Path to the expanded queries JSON files (one per batch).",
     )
 
     def requires(self):
@@ -248,14 +248,18 @@ class BM25RetrievalPartialTask(luigi.Task, OptionMixin):
             )
 
             if self.with_expanded_queries:
-                # expanded query location
+                # Left-join expansion JSON onto queries; coalesce back to the
+                # original query for any qid the generator missed (~0.4% on
+                # LongEval-Web 2025). Without the coalesce, missing qids land
+                # as null and Lucene's searcher.search(query, k) raises
+                # `(nan, 100)` JavaException.
                 expanded = spark.read.json(
                     Path(self.expanded_path).expanduser().as_posix(), multiLine=True
-                ).cache()
-                queries = queries.drop("query").join(
-                    expanded,
-                    on=["qid"],
-                    how="left",
+                ).select(F.col("qid"), F.col("query").alias("expanded_query")).cache()
+                queries = (
+                    queries.join(expanded, on=["qid"], how="left")
+                    .withColumn("query", F.coalesce(F.col("expanded_query"), F.col("query")))
+                    .drop("expanded_query")
                 )
 
             results = run_search(
@@ -282,6 +286,10 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
         default="retrieval",
         description="Prefix for the output directory.",
     )
+    expanded_path: str = luigi.Parameter(
+        default="~/scratch/longeval/2025/query_expansion/french/expansion",
+        description="Path to the expanded queries JSON files (one per batch).",
+    )
 
     def output(self):
         return [
@@ -306,6 +314,7 @@ class BM25RetrievalTask(luigi.Task, OptionMixin):
                     sample_id=i,
                     with_expanded_queries=self.with_expanded_queries,
                     output_prefix=self.output_prefix,
+                    expanded_path=self.expanded_path,
                 )
             )
         yield tasks
@@ -409,8 +418,30 @@ def run_bm25(
     sample_id: int = typer.Option(
         -1, help="Sample ID to use for the collection. Default is 0."
     ),
+    with_expanded: bool = typer.Option(
+        False,
+        help="Run the expanded-query arm too (writes retrieval_expanded/). "
+        "Original-query arm runs unconditionally.",
+    ),
+    expanded_only: bool = typer.Option(
+        False,
+        help="When set with --with-expanded, skips the original arm (only the "
+        "expanded retrieval runs). Useful when the baseline retrieval is already done.",
+    ),
+    expanded_path: str = typer.Option(
+        "~/scratch/longeval/2025/query_expansion/french/expansion",
+        help="Path to expansion JSON files (one per qid batch).",
+    ),
 ):
     """Run BM25 on the specified index and query file."""
+    if expanded_only and not with_expanded:
+        raise typer.BadParameter("--expanded-only requires --with-expanded")
+    if expanded_only:
+        expansion_arms = [True]
+    elif with_expanded:
+        expansion_arms = [False, True]
+    else:
+        expansion_arms = [False]
     with spark_resource() as spark:
         # get dates from the documents
         train_dates = sorted(
@@ -458,8 +489,9 @@ def run_bm25(
                 output_prefix=(
                     "retrieval" if not with_expanded_queries else "retrieval_expanded"
                 ),
+                expanded_path=expanded_path,
             )
-            for with_expanded_queries in [False, True]
+            for with_expanded_queries in expansion_arms
             for date in train_dates + test_dates
         ],
         workers=workers,
@@ -486,7 +518,7 @@ def run_bm25(
                     "retrieval" if not with_expanded_queries else "retrieval_expanded"
                 ),
             )
-            for with_expanded_queries in [False, True]
+            for with_expanded_queries in expansion_arms
             for date in train_dates
         ]
         + [
@@ -506,7 +538,7 @@ def run_bm25(
                     "retrieval" if not with_expanded_queries else "retrieval_expanded"
                 ),
             )
-            for with_expanded_queries in [False, True]
+            for with_expanded_queries in expansion_arms
             for date in test_dates
         ],
         workers=workers,

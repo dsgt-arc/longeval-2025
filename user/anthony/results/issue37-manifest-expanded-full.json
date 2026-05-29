@@ -1,0 +1,49 @@
+{
+  "git_commit": "3e1dd137423f3b8bf713f3af0fb6e46de056a51a",
+  "dates": [
+    "2022-06",
+    "2022-07",
+    "2022-08",
+    "2022-09",
+    "2022-10",
+    "2022-11",
+    "2022-12",
+    "2023-01",
+    "2023-02",
+    "2023-03",
+    "2023-04",
+    "2023-05",
+    "2023-06",
+    "2023-07",
+    "2023-08"
+  ],
+  "seeds": [
+    42
+  ],
+  "sample_queries": 28187,
+  "k_candidates": 99,
+  "max_seq_len": 512,
+  "batch_size": 64,
+  "models": [
+    "bm25",
+    "jinaai/jina-reranker-v2-base-multilingual"
+  ],
+  "versions": {
+    "torch": [
+      "2.12.0+cu126"
+    ],
+    "transformers": [
+      "4.57.6"
+    ],
+    "sentence_transformers": [
+      "5.5.1"
+    ],
+    "ir_datasets": [
+      "0.5.11"
+    ]
+  },
+  "mean_pairs_per_s_by_arm": {
+    "jina-v2": 410.6
+  },
+  "total_runs": 30
+}

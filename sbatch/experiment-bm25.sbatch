@@ -16,17 +16,38 @@ apptainer exec \
 set -xeu
 hostname
 source ~/scratch/longeval/app/.venv/bin/activate
+
+# The repo .env hardcodes a NixOS JAVA_HOME/JVM_PATH; override with the
+# container's OpenJDK 21 (load_dotenv uses override=False, so env wins).
+# JVM_PATH is what pyjnius/pyserini's Lucene JVM honors; JAVA_HOME is for Spark.
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export JVM_PATH=$JAVA_HOME/lib/server/libjvm.so
+# pyserini.encode._openai instantiates openai.OpenAI() at import time (pulled in
+# by `from pyserini.search.lucene import LuceneSearcher`), which raises without
+# a key. BM25 never calls OpenAI, so a non-empty dummy satisfies the constructor.
+export OPENAI_API_KEY=dummy
+# That openai client also builds an httpx client that reads SSL_CERT_FILE; the
+# repo .env points it at ca-bundle.crt (RHEL/Nix), absent on Ubuntu -> the
+# import dies with FileNotFoundError. Point at Ubuntu's actual bundle.
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
 python -m pyserini.index.lucene -options
 
-project_dir=/storage/coda1/p-dsgt_clef2025/0/shared/longeval
+# 2025 project storage is deallocated; everything lives under scratch now.
 scratch_dir=$(realpath ~/scratch/longeval)
 
 export PYSPARK_DRIVER_CORES=24
-export PYSPARK_DRIVER_MEMORY=$(($PYSPARK_DRIVER_CORES*6-4))g
+# ~75% of the 144G cgroup (24 cpus x 6G), leaving room for the separate Lucene
+# indexing JVM, the Python driver, and OS page cache.
+export PYSPARK_DRIVER_MEMORY=$(($PYSPARK_DRIVER_CORES*6*3/4))g
 export SPARK_LOCAL_DIR=${TMPDIR:-/tmp}/spark-tmp
-python -m longeval.experiment.bm25.workflow \
-    $project_dir/2025/parquet \
-    $project_dir/2025/bm25 \
+# `run-bm25` must be named explicitly: the module's Typer app now exposes
+# multiple commands (run-bm25, index-trec, compare-index-times), so a bare
+# positional invocation is parsed as a command name and fails.
+python -m longeval.experiment.bm25.workflow run-bm25 \
+    $scratch_dir/2025/parquet \
+    $scratch_dir/2025/bm25 \
     --scratch-path $scratch_dir/bm25 \
     --parallelism $PYSPARK_DRIVER_CORES \
     --workers 12 \
