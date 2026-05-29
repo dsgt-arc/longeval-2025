@@ -5,13 +5,14 @@
 
 ## Status (2026-05-28) — done
 
-All three sub-experiments finished and on PR #38:
+All four sub-experiments finished and on PR #38:
 
 | phase | runs | result |
 |---|---|---|
 | Phase 1 — 3-arm 1k 3-seed (bm25 / camembert-base / jina-v2) | 135 | jina-v2 beats camembert-base on **15/15 dates**, every seed |
 | Full-query confirmation (same 3 arms, all qids, seed 42) | 45 | matches phase 1 within ±0.014 absolute; jina-v2 still wins every date |
 | Phase 2 — 5-arm 1k 3-seed extras (+ camembert-large, camemberta-L10, bge-v2-m3) | 270 | jina-v2 leads; bge-v2-m3 close 2nd; bigger camembert ≈ camembert-base |
+| Phase 3 — expansion + reranker stack (french-additive BM25 → bm25 / jina-v2) | 90 + 30 | jina recovers ~75% of BM25's expansion loss but never overtakes no-exp jina-v2 |
 
 **Test-set headline (6 dates, mean nDCG@10, 1k 3-seed):**
 
@@ -19,25 +20,34 @@ All three sub-experiments finished and on PR #38:
 |---|---:|---:|
 | jina-v2 | 0.4148 | — |
 | bge-v2-m3 | 0.4081 | −0.0067 |
+| jina-v2 (french-exp) | 0.4011 | −0.0137 |
 | camembert-large | 0.3842 | −0.0306 |
 | camemberta-L10 | 0.3805 | −0.0343 |
 | camembert-base | 0.3798 | −0.0350 |
 | bm25 | 0.3155 | −0.0993 |
+| bm25 (french-exp) | 0.2663 | −0.1485 |
 
 **Decisions taken** (full detail in the Decisions section):
 - Promote **jina-v2** as the default reranker.
 - **bge-v2-m3** is a viable backup (same quality tier, ~2.3× slower).
 - Don't bother with camembert-large / camemberta-L10 — gains over camembert-base
   are within seed std.
-- Keep query expansion excluded.
+- **Keep query expansion excluded** — confirmed by the phase 3 stack: jina-v2
+  on expanded candidates (0.4011) loses to jina-v2 on no-exp candidates (0.4148)
+  on every test date.
 
 **For the paper** — paper-ready artifacts live next to this worklog:
 - `issue37-results.{md,csv}` + `issue37-manifest.json` — 5-arm 1k 3-seed
   table (the primary table)
 - `issue37-results-full.{md,csv}` + `issue37-manifest-full.json` — 3-arm
   full-query confirmation table (for the appendix / reproducibility statement)
+- `issue37-results-expanded.{md,csv}` + `issue37-manifest-expanded.json` —
+  expansion + reranker 1k 3-seed (bm25-exp, jina-exp)
+- `issue37-results-expanded-full.{md,csv}` + `issue37-manifest-expanded-full.json` —
+  expansion + reranker full-query confirmation
 - This worklog has the protocol, the bug-discovery notes (docid stripping,
-  torch cu126 pin, transformers<5 pin), and the decision rationale.
+  torch cu126 pin, transformers<5 pin, expansion NaN-coalesce), and the
+  decision rationale.
 
 **Open hooks for follow-up analysis** are stubbed in
 `user/anthony/20260528-reranker-eval-issue37.md`: per-topic reranker
@@ -255,6 +265,112 @@ camembert-large ~178, camemberta-L10 ~228, plus camembert-base ~530 and jina-v2
 ~412 at batch=64 from the original sweep. The extras run took ~1 h 50 m
 wall-clock as a 15-task array, gated by 2022-08 (the largest date).
 
+## Expansion + reranker stack (phase 3)
+
+Re-opens a question the prior worklog (`20260522-query-expansion-rescore.md`)
+left flagged: that worklog measured **first-stage BM25 only** and found
+french-additive expansion lost to baseline at every date (pooled 0.204 vs 0.242).
+The hypothesis here: the expanded candidate set changes which docs surface at
+k=100; a strong cross-encoder might use the different set differently and
+recover (or even surpass) the loss. We tested jina-v2 (the new default) on top
+of the french-additive expansion the prior worklog identified as the best
+expansion variant.
+
+**Setup**: 75,252 query expansions (additive: `original + original + terms[]`)
+were uploaded to `~/scratch/longeval/2025/query_expansion/french/expansion/`
+(3011 batches × 25 qids; ~99.6% per-date coverage, with the ~30 uncovered qids
+per date coalesced back to the original). Re-enabled the `with_expanded_queries`
+arm in `bm25/workflow.py` (`--with-expanded --expanded-only`); produced
+`bm25/retrieval_expanded/` for all 15 dates. The rerank pipeline gained
+`--retrieval-prefix retrieval_expanded` so it consumes the expanded candidate
+set while still reranking against the **original** user query from the queries
+parquet — i.e. we test "does the expanded candidate set help the reranker",
+not "does the reranker also like expanded queries". Two arms only — bm25
+(candidate-set-as-is nDCG@10) and jina-v2 — over both the 1k 3-seed and
+full-query protocols to mirror the no-expansion tables exactly.
+
+### 1k 3-seed (15 × 3 × 2 = 90 runs)
+
+Artifacts: `issue37-results-expanded.{md,csv}`, `issue37-manifest-expanded.json`.
+
+| date | split | bm25-exp | jina-v2-exp |
+|---|---|---|---|
+| 2022-06 | train | 0.1090±0.0024 | 0.1729±0.0088 |
+| 2022-07 | train | 0.1177±0.0088 | 0.1777±0.0036 |
+| 2022-08 | train | 0.1174±0.0138 | 0.1850±0.0137 |
+| 2022-09 | train | 0.1944±0.0025 | 0.2842±0.0029 |
+| 2022-10 | train | 0.2384±0.0050 | 0.3865±0.0044 |
+| 2022-11 | train | 0.2363±0.0122 | 0.3854±0.0197 |
+| 2022-12 | train | 0.2551±0.0057 | 0.3905±0.0173 |
+| 2023-01 | train | 0.2580±0.0069 | 0.4106±0.0109 |
+| 2023-02 | train | 0.2591±0.0036 | 0.3976±0.0132 |
+| 2023-03 | test | 0.2698±0.0080 | 0.4025±0.0083 |
+| 2023-04 | test | 0.2757±0.0070 | 0.4125±0.0019 |
+| 2023-05 | test | 0.2766±0.0077 | 0.4194±0.0090 |
+| 2023-06 | test | 0.2628±0.0066 | 0.3903±0.0054 |
+| 2023-07 | test | 0.2656±0.0127 | 0.4193±0.0142 |
+| 2023-08 | test | 0.2474±0.0077 | 0.3628±0.0121 |
+
+| group | bm25-exp | jina-v2-exp |
+|---|---|---|
+| train (9) | 0.1984±0.0657 | 0.3100±0.1051 |
+| test (6) | 0.2663±0.0107 | 0.4011±0.0218 |
+| pooled (15) | 0.2256±0.0608 | 0.3465±0.0928 |
+
+### Full-query confirmation (15 × 1 × 2 = 30 runs)
+
+Artifacts: `issue37-results-expanded-full.{md,csv}`, `issue37-manifest-expanded-full.json`.
+
+| date | split | bm25-exp | jina-v2-exp |
+|---|---|---:|---:|
+| 2022-06 | train | 0.1110 | 0.1759 |
+| 2022-07 | train | 0.1171 | 0.1838 |
+| 2022-08 | train | 0.1228 | 0.1914 |
+| 2022-09 | train | 0.1908 | 0.2841 |
+| 2022-10 | train | 0.2438 | 0.3883 |
+| 2022-11 | train | 0.2391 | 0.3848 |
+| 2022-12 | train | 0.2508 | 0.3908 |
+| 2023-01 | train | 0.2558 | 0.4007 |
+| 2023-02 | train | 0.2626 | 0.3971 |
+| 2023-03 | test | 0.2618 | 0.4037 |
+| 2023-04 | test | 0.2683 | 0.4063 |
+| 2023-05 | test | 0.2718 | 0.4130 |
+| 2023-06 | test | 0.2646 | 0.3966 |
+| 2023-07 | test | 0.2655 | 0.4126 |
+| 2023-08 | test | 0.2396 | 0.3571 |
+
+| group | bm25-exp | jina-v2-exp |
+|---|---:|---:|
+| train (9) | 0.1993±0.0651 | 0.3108±0.1017 |
+| test (6) | 0.2619±0.0115 | 0.3982±0.0210 |
+| pooled (15) | 0.2244±0.0590 | 0.3457±0.0896 |
+
+### Direct comparison vs no-expansion (test set, nDCG@10)
+
+|  | no-exp 1k 3-seed | exp 1k 3-seed | Δ | no-exp full | exp full | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| bm25 | 0.3155 | 0.2663 | **−0.0492** | 0.3142 | 0.2619 | **−0.0523** |
+| jina-v2 | 0.4148 | 0.4011 | **−0.0137** | 0.4096 | 0.3982 | **−0.0114** |
+
+**Recovery ratio**: the reranker shrinks the expansion loss from ~0.050 → ~0.013
+on test (~74% of the lost nDCG@10 recovered), but **never closes the gap**. The
+expanded arm loses to its no-expansion counterpart on every one of the 6 test
+dates, both at 1k 3-seed and at full-query. The prior worklog's negative result
+holds at the reranker stage — just less catastrophically.
+
+What the reranker *can* do is rank around expansion's noise: jina-v2 on
+expanded candidates (test 0.4011) still beats the no-expansion **paper control**
+(camembert-base, 0.3798) by +0.021, and beats the no-expansion BM25 baseline
+(0.3155) by +0.086. So the choice of reranker matters far more than the choice
+of expansion-vs-no-expansion.
+
+**Why expansion hurts the candidate set**: french-additive expansion swaps
+~30% of the BM25 top-100 docs per qid (informal spot-check); some swap-ins are
+useful but the expected effect is to push out IDF-strong matches in favor of
+broader-topic noise. The reranker can identify the surviving relevant docs but
+can't surface ones that BM25 lost. k=100 → k=200 might help here, but at 2×
+rerank cost and still no obvious win — not pursuing.
+
 ## Decisions
 
 - **Does jina-v2 consistently beat the camembert-base control? YES — on all
@@ -274,8 +390,13 @@ wall-clock as a 15-task array, gated by 2022-08 (the largest date).
 - **Don't bother with camembert-large or camemberta-L10**: gains over
   camembert-base are within the seed std (+0.004 / +0.001 on test). The
   3× throughput cost of camembert-large is not justified.
-- **Keep query expansion excluded: YES** — negative in the prior worklog; BM25
-  expanded loops stay pinned off (`for with_expanded_queries in [False]`).
+- **Keep query expansion excluded: YES.** The prior worklog showed it hurts
+  first-stage BM25 (pooled −0.038 nDCG@10). Phase 3 here confirms it still
+  hurts at the reranker stage (jina test −0.014, jina pooled −0.010), with no
+  date where jina-on-expanded beats jina-on-baseline. The reranker recovers
+  ~74% of the expansion loss but never closes the gap. The `with_expanded`
+  workflow plumbing is preserved (re-enabled and tested) but pinned off as the
+  default for `experiment-bm25.sbatch`.
 
 ## Execution notes (what actually happened)
 
