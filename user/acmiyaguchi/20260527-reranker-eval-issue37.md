@@ -12,7 +12,7 @@ All four sub-experiments finished and on PR #38:
 | Phase 1 — 3-arm 1k 3-seed (bm25 / camembert-base / jina-v2) | 135 | jina-v2 beats camembert-base on **15/15 dates**, every seed |
 | Full-query confirmation (same 3 arms, all qids, seed 42) | 45 | matches phase 1 within ±0.014 absolute; jina-v2 still wins every date |
 | Phase 2 — 5-arm 1k 3-seed extras (+ camembert-large, camemberta-L10, bge-v2-m3) | 270 | jina-v2 leads; bge-v2-m3 close 2nd; bigger camembert ≈ camembert-base |
-| Phase 3 — expansion + reranker stack (french-additive BM25 → bm25 / jina-v2) | 90 + 30 | jina recovers ~75% of BM25's expansion loss but never overtakes no-exp jina-v2 |
+| Phase 3 — expansion + reranker stack (french-additive BM25 → bm25 / jina-v2) | 90 + 30 | jina recovers ~74% of BM25's expansion loss but never overtakes no-exp jina-v2 |
 
 **Test-set headline (6 dates, mean nDCG@10, 1k 3-seed):**
 
@@ -85,8 +85,9 @@ node-local `$TMPDIR/spark-tmp`. Every job runs inside apptainer activating the o
   (control), `jinaai/jina-reranker-v2-base-multilingual`.
 - **Sampling:** seeds 42, 1, 2 × 1000 queries/date; candidate depth k=100; metric
   nDCG@10; max_seq_len=512; fp16 on V100.
-- **Query expansion:** excluded (it was negative in the prior worklog and the BM25
-  expanded loops are pinned off — `workflow.py` `for with_expanded_queries in [False]`).
+- **Query expansion:** excluded by default (it was negative in the prior worklog).
+  The expanded arm is flag-gated in `workflow.py` (`--with-expanded`/`--expanded-only`)
+  and defaults to `expansion_arms = [False]`; phase 3 exercised it explicitly.
 
 ## Pipeline stages / artifacts
 
@@ -397,6 +398,33 @@ rerank cost and still no obvious win — not pursuing.
   ~74% of the expansion loss but never closes the gap. The `with_expanded`
   workflow plumbing is preserved (re-enabled and tested) but pinned off as the
   default for `experiment-bm25.sbatch`.
+
+## Compute budget
+
+GPU time consumed by the rerank stage, summed from the per-cell `wall_s` in the
+results CSVs (GPU = all non-bm25 cells; the `bm25` arm is CPU-only nDCG scoring
+of an existing candidate set and logs `wall_s≈0`):
+
+| sweep | GPU cells | GPU-h |
+|---|---:|---:|
+| no-exp 5-arm 1k 3-seed | 225 | 24.6 |
+| ↳ of which 3-core (phase 1) | 90 | 5.3 |
+| ↳ of which extras (large / camemberta-L10 / bge-v2-m3) | 135 | 19.3 |
+| no-exp full-query 3-arm | 30 | 25.1 |
+| expansion 1k 3-seed | 45 | 3.1 |
+| expansion full-query | 15 | 14.6 |
+| **total** | **315** | **≈67.4 GPU-h** |
+
+All on a single V100 16GB per task (fp16). Full-query sweeps dominate despite
+fewer cells — each reranks the entire qid set rather than a 1k subsample.
+Wall-clock per 15-task array was far shorter than the GPU-h sum (jobs run in
+parallel across the array): ~3 h 20 m for the full-query no-exp sweep, ~1 h 50 m
+for the extras, each gated by 2022-08 (the largest date).
+
+**Not instrumented here:** the first-stage BM25 index/retrieval
+(`experiment-bm25.sbatch`) and the Spark ETL (~1–2 min/date) run as separate
+CPU-only stages that don't write `wall_s` into these CSVs, so their CPU-hours
+aren't totaled — pull from SLURM `sacct` if a full CPU accounting is needed.
 
 ## Execution notes (what actually happened)
 
