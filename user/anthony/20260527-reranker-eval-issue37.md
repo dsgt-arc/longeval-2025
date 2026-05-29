@@ -37,13 +37,13 @@ All four sub-experiments finished and on PR #38:
   on every test date.
 
 **For the paper** — paper-ready artifacts live next to this worklog:
-- `issue37-results.{md,csv}` + `issue37-manifest.json` — 5-arm 1k 3-seed
+- `results/issue37-results.{md,csv}` + `results/issue37-manifest.json` — 5-arm 1k 3-seed
   table (the primary table)
-- `issue37-results-full.{md,csv}` + `issue37-manifest-full.json` — 3-arm
+- `results/issue37-results-full.{md,csv}` + `results/issue37-manifest-full.json` — 3-arm
   full-query confirmation table (for the appendix / reproducibility statement)
-- `issue37-results-expanded.{md,csv}` + `issue37-manifest-expanded.json` —
+- `results/issue37-results-expanded.{md,csv}` + `results/issue37-manifest-expanded.json` —
   expansion + reranker 1k 3-seed (bm25-exp, jina-exp)
-- `issue37-results-expanded-full.{md,csv}` + `issue37-manifest-expanded-full.json` —
+- `results/issue37-results-expanded-full.{md,csv}` + `results/issue37-manifest-expanded-full.json` —
   expansion + reranker full-query confirmation
 - This worklog has the protocol, the bug-discovery notes (docid stripping,
   torch cu126 pin, transformers<5 pin, expansion NaN-coalesce), and the
@@ -56,7 +56,7 @@ independent reproducibility cross-check.
 
 ---
 
-Follows up `20260523-reranker-model-comparison.md`, which found
+Follows up `user/acmiyaguchi/20260523-reranker-model-comparison.md`, which found
 `jinaai/jina-reranker-v2-base-multilingual` (0.4145) beat the paper control
 `antoinelouis/crossencoder-camembert-base-mmarcoFR` (0.3772) on a single 2023-01
 1k-query subsample. This issue tests whether that win **holds across all 15
@@ -128,8 +128,8 @@ apptainer exec ~/scratch/longeval/app.sif bash -lc \
 
 Initial 3-arm grid: 15 dates × 3 seeds (42,1,2) × 3 arms = **135 runs**. Cells are
 mean±std over seeds; 1k-query subsample, k=100, nDCG@10, fp16 on V100. (The
-"5-arm extras sweep" section below expands this to 6 arms; `issue37-results.{md,csv}`
-and `issue37-manifest.json` reflect the 5-arm 270-run table.)
+"5-arm extras sweep" section below expands this to 6 arms; `results/issue37-results.{md,csv}`
+and `results/issue37-manifest.json` reflect the 5-arm 270-run table.)
 
 | date | split | bm25 | camembert-base | jina-v2 |
 |---|---|---|---|---|
@@ -163,7 +163,7 @@ Versions (manifest): torch 2.12.0+cu126, transformers 4.57.6, sentence-transform
 
 Follow-up to verify the 1k-subsample was unbiased. Same protocol but
 **`--sample-queries 0` (entire qid set) and one seed (42)**, the 3 baseline arms.
-Artifacts: `issue37-results-full.{md,csv}` and `issue37-manifest-full.json`;
+Artifacts: `results/issue37-results-full.{md,csv}` and `results/issue37-manifest-full.json`;
 raw cells at `~/scratch/longeval/2025/rerank-full/`.
 
 15 dates × 1 seed × 3 arms = **45 runs**, single-seed (no std bar).
@@ -218,8 +218,8 @@ into the same `~/scratch/longeval/2025/rerank/` so the aggregator yields one
 6-column table.
 
 15 dates × 3 seeds × 6 arms = **270 cells**; results from
-`scripts/aggregate-rerank-results.py` (copied to `issue37-results.{md,csv}`,
-`issue37-manifest.json`).
+`scripts/aggregate-rerank-results.py` (copied to `results/issue37-results.{md,csv}`,
+`results/issue37-manifest.json`).
 
 | date | split | bm25 | camembert-base | camemberta-L10 | camembert-large | bge-v2-m3 | jina-v2 |
 |---|---|---|---|---|---|---|---|
@@ -268,7 +268,7 @@ wall-clock as a 15-task array, gated by 2022-08 (the largest date).
 
 ## Expansion + reranker stack (phase 3)
 
-Re-opens a question the prior worklog (`20260522-query-expansion-rescore.md`)
+Re-opens a question the prior worklog (`user/acmiyaguchi/20260522-query-expansion-rescore.md`)
 left flagged: that worklog measured **first-stage BM25 only** and found
 french-additive expansion lost to baseline at every date (pooled 0.204 vs 0.242).
 The hypothesis here: the expanded candidate set changes which docs surface at
@@ -292,7 +292,7 @@ full-query protocols to mirror the no-expansion tables exactly.
 
 ### 1k 3-seed (15 × 3 × 2 = 90 runs)
 
-Artifacts: `issue37-results-expanded.{md,csv}`, `issue37-manifest-expanded.json`.
+Artifacts: `results/issue37-results-expanded.{md,csv}`, `results/issue37-manifest-expanded.json`.
 
 | date | split | bm25-exp | jina-v2-exp |
 |---|---|---|---|
@@ -320,7 +320,7 @@ Artifacts: `issue37-results-expanded.{md,csv}`, `issue37-manifest-expanded.json`
 
 ### Full-query confirmation (15 × 1 × 2 = 30 runs)
 
-Artifacts: `issue37-results-expanded-full.{md,csv}`, `issue37-manifest-expanded-full.json`.
+Artifacts: `results/issue37-results-expanded-full.{md,csv}`, `results/issue37-manifest-expanded-full.json`.
 
 | date | split | bm25-exp | jina-v2-exp |
 |---|---|---:|---:|

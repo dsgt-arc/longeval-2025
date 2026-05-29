@@ -1,7 +1,7 @@
 # Reranker evaluation — Anthony's contribution (issue #37)
 
 **Date opened:** 2026-05-28 · **Tracks:** GitHub issue #37 · **PR:** #38
-**Joins:** `user/acmiyaguchi/20260527-reranker-eval-issue37.md` (primary worklog,
+**Joins:** `20260527-reranker-eval-issue37.md` (primary worklog,
 read that first for the protocol + plumbing).
 
 ## What's already done
@@ -66,10 +66,10 @@ reproducibility statement.
 ## Pointers
 
 - Protocol details + bug discoveries + execution notes: see acmiyaguchi's
-  worklog (`user/acmiyaguchi/20260527-reranker-eval-issue37.md`).
+  worklog (`20260527-reranker-eval-issue37.md`).
 - Code: `scripts/rerank-eval.py` (driver), `scripts/aggregate-rerank-results.py`
   (table generator), `sbatch/experiment-rerank{,-extras}.sbatch` (runners).
-- Raw rows: `user/acmiyaguchi/issue37-results.csv` (1k 3-seed for first 3 arms;
+- Raw rows: `results/issue37-results.csv` (1k 3-seed for first 3 arms;
   the 5-arm + full-query versions will land in sibling files).
 - Issue: <https://github.com/dsgt-arc/longeval-2025/issues/37>; PR: #38.
 
