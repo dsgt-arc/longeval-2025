@@ -1,7 +1,6 @@
 # Comprehensive reranker evaluation across LongEval-Web dates (issue #37)
 
-**Date opened:** 2026-05-27 · **Owner:** acmiyaguchi (driven via Claude Code)
-**Branch:** `issue-37-reranker-eval` · **Tracks:** GitHub issue #37
+**Date opened:** 2026-05-27 · **Branch:** `issue-37-reranker-eval` · **Tracks:** GitHub issue #37
 
 ## Status (2026-05-28) — done
 
@@ -49,10 +48,9 @@ All four sub-experiments finished and on PR #38:
   torch cu126 pin, transformers<5 pin, expansion NaN-coalesce), and the
   decision rationale.
 
-**Open hooks for follow-up analysis** are stubbed in
-`user/anthony/20260528-reranker-eval-issue37.md`: per-topic reranker
-effectiveness via LDA registers, paired Wilcoxon per arm-pair, drift-over-time,
-independent reproducibility cross-check.
+**Open hooks for follow-up analysis** (detailed in the *Follow-up analysis* section
+at the end): per-topic reranker effectiveness via LDA registers, paired Wilcoxon
+per arm-pair, drift-over-time, reproducibility cross-check.
 
 ---
 
@@ -471,3 +469,26 @@ Issues found and fixed during execution (all on PR #38):
    full-candidate `toPandas` in `_build_candidates` exceeded the 96G cgroup. Re-ran
    those three at `--mem-per-cpu=16G` (192G); all 135 cells then present. (A future
    optimization: subsample queries before materializing candidate contents.)
+
+## Follow-up analysis (open)
+
+Analyses not yet run; the per-qid parquet the sweep already wrote makes them cheap.
+
+1. **Per-topic reranker effectiveness via LDA registers.** Cross the K=4 (and/or
+   K=20) topic registers from `20260525-lda-topic-register-names.md` with per-qid
+   reranker nDCG@10 — does jina-v2's lift over BM25 (and over the control) vary by
+   topic register? Inputs: per-qid nDCG at
+   `~/scratch/longeval/2025/rerank/date=*/seed=42/model=*/ndcg_per_qid.parquet`;
+   the K=4/K=20 query-topic assignments. Output: `topic_register × arm → mean
+   nDCG@10`, plus a reranker-lift column (`Δ(arm − bm25)` per register).
+2. **Statistical significance — paired Wilcoxon per arm-pair per date.** The 1k
+   3-seed table has between-seed std but no formal paired test on per-qid scores.
+   With `ndcg_per_qid.parquet`, a paired Wilcoxon (or paired bootstrap) of jina-v2
+   vs camembert-base / vs bge-v2-m3 per date would confirm whether the differences
+   hold at p<0.05 on the actual qids.
+3. **Drift over time.** Recompute the across-dates "did jina's lead grow or shrink"
+   trend — the LongEval-specific narrative. Full-query gives one number per date;
+   the 1k 3-seed gives 3 per date for error bars.
+4. **Reproducibility cross-check.** Re-run one (date, seed, model) cell from a
+   separate venv/machine and verify nDCG matches to 4 decimals — for the paper
+   reproducibility statement.
